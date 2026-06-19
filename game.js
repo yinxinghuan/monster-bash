@@ -17,14 +17,14 @@ import { createAudio } from './lib/audio.js';
 // ─── table layout constants (XZ plane, all tunable) ──────────────────────────
 const HW       = 3.0;     // playfield half-width: x ∈ [-HW, HW]
 const TOP      = -8.6;    // far end of the table
-const BOTTOM   = 2.6;     // near end / drain plane
-const BALL_R   = 0.34;
-const LANE_X1  = HW + 0.92;   // outer right wall (launch lane between HW and LANE_X1)
+const BOTTOM   = 3.4;     // near end / drain plane
+const BALL_R   = 0.34;    // ball Ø = 0.68 → EVERY path the ball must pass must be > 0.68
+const LANE_X1  = HW + 0.95;   // outer right wall (launch lane between HW and LANE_X1)
 const LANE_CX  = (HW + LANE_X1) / 2;
-const GRAV     = 11.5;    // table gravity (toward +z)
-const WALL_E   = 0.42;    // wall restitution
-const FLIP_LEN = 1.46;
-const FLIP_R   = 0.20;
+const GRAV     = 13.0;    // table gravity (toward +z) — strong enough the ball flows down
+const WALL_E   = 0.40;    // wall restitution
+const FLIP_LEN = 1.7;
+const FLIP_R   = 0.22;
 const DRAIN_Z  = BOTTOM;  // past this z = ball lost
 
 export function startGame({ canvas, hud }) {
@@ -109,40 +109,46 @@ export function startGame({ canvas, hud }) {
     return g;
   }
 
+  // ── bottom-region geometry anchors (single source of truth) ──────────────
+  // Flipper pivots sit wide; flippers angle gently inward so the gaps the ball
+  // must fall through are all WIDER than the ball (Ø 0.68):
+  //   • centre drain gap between flipper tips ≈ 1.10
+  //   • two outlanes (outside each flipper pivot) drain as well
+  const PIVOT_X = 2.1;          // flipper pivot x (±)
+  const PIVOT_Z = BOTTOM - 0.95;// flipper pivot z  (= 2.45)
+  const FUNNEL_TOP_Z = 0.8;     // where the side walls start funnelling inward
+
   // ── outer walls ─────────────────────────────────────────────────────────
-  // left side
-  wall(-HW, BOTTOM - 2.7, -HW, TOP + 1.1);
+  // left side: vertical wall down to the funnel start, then funnel to the pivot
+  wall(-HW, FUNNEL_TOP_Z, -HW, TOP + 1.1);
   wall(-HW, TOP + 1.1, -HW + 1.1, TOP);                 // top-left chamfer
+  wall(-HW, FUNNEL_TOP_Z, -PIVOT_X, PIVOT_Z, { glow: 0x3a1f6e });   // left funnel → pivot
   // top span (caps field + lane top)
   wall(-HW + 1.1, TOP, LANE_X1, TOP);
-  // right outer wall (down the lane)
-  wall(LANE_X1, TOP, LANE_X1, BOTTOM - 2.7);
-  // lane divider — stops short of the top so the deflected ball spills into play
-  wall(HW, BOTTOM - 0.2, HW, TOP + 2.9);
-  // lane-cap deflector — a diagonal across the top of the launch lane that
-  // catches the rising ball and kicks it DOWN-LEFT across the divider gap into
-  // the playfield (otherwise it falls straight back down the lane → instant drain)
-  wall(HW - 0.15, TOP + 0.25, LANE_X1 + 0.05, TOP + 2.3, { kick: 3.5, glow: 0xc24be8 });
+  // right outer wall (down the launch lane, past the spawn point)
+  wall(LANE_X1, TOP, LANE_X1, BOTTOM - 0.5);
+  // lane divider — separates lane from field up top; stops at FUNNEL_TOP_Z so the
+  // descending field ball funnels in (and the plunged ball still rides the lane up)
+  wall(HW, FUNNEL_TOP_Z, HW, TOP + 2.9);
+  wall(HW, FUNNEL_TOP_Z, PIVOT_X, PIVOT_Z, { glow: 0x3a1f6e });     // right funnel → pivot
+  // NOTE: the launch ball is steered into the playfield by a deterministic
+  // "lane-exit gate" in the physics step (see LANE_EXIT_Z), not by a passive
+  // deflector wall — passive reflection proved direction-unreliable.
 
-  // lower guides funnel toward the flippers (meet the pivots)
-  wall(-HW, BOTTOM - 2.7, -1.55, BOTTOM - 0.9, { glow: 0x3a1f6e });
-  wall(HW, BOTTOM - 2.7, 1.55, BOTTOM - 0.9, { glow: 0x3a1f6e });
-
-  // ── slingshots (angled kickers above each flipper) ──────────────────────
-  function slingshot(side) {
-    const s = side; // -1 left, +1 right
-    const ax = s * 1.5, az = BOTTOM - 2.45;
-    const bx = s * 0.95, bz = BOTTOM - 0.95;
-    wall(ax, az, bx, bz, { e: 0.6, kick: 7.5, score: 50, color: 0x8b2fc0, glow: 0xc24be8, h: 0.7,
-      flash: null });
-    const idx = segs.length - 1;
-    segs[idx].flash = makeSlingLight((ax + bx) / 2, (az + bz) / 2);
-  }
+  // ── slingshots (angled kickers above each flipper, pulled OFF-CENTRE so they
+  //    never block the central drain channel) ──────────────────────────────
   function makeSlingLight(x, z) {
     const l = new THREE.PointLight(0xff4bd0, 0, 4, 2);
     l.position.set(x, 1.2, z);
     table.add(l);
     return { light: l, t: 0 };
+  }
+  function slingshot(side) {
+    const s = side; // -1 left, +1 right
+    const ax = s * 1.7, az = 1.7;      // outer-upper (≥0.8 clear of the funnel guide = passable inlane)
+    const bx = s * 1.0, bz = 2.7;      // inner-lower (x=±1.0 keeps centre channel ≈2.0 clear)
+    wall(ax, az, bx, bz, { e: 0.55, kick: 5.5, score: 50, color: 0x8b2fc0, glow: 0xc24be8, h: 0.7 });
+    segs[segs.length - 1].flash = makeSlingLight((ax + bx) / 2, (az + bz) / 2);
   }
   slingshot(-1);
   slingshot(1);
@@ -162,43 +168,48 @@ export function startGame({ canvas, hud }) {
     const light = new THREE.PointLight(color, 0.5, 5, 2);
     light.position.set(x, 1.4, z);
     table.add(light);
-    circles.push({ x, z, r, e: 0.55, kick: 8.5, score: 100, mesh: g, cap, light, kind: 'pop', punch: 0 });
+    circles.push({ x, z, r, e: 0.5, kick: 5.0, score: 100, mesh: g, cap, light, kind: 'pop', punch: 0 });
   }
-  popBumper(-1.25, TOP + 3.4, 0x2fd0ff);
-  popBumper(1.25, TOP + 3.4, 0xffd23f);
-  popBumper(0, TOP + 4.9, 0x8bff5a);
+  popBumper(-1.3, TOP + 3.6, 0x2fd0ff);
+  popBumper(1.3, TOP + 3.6, 0xffd23f);
+  popBumper(0, TOP + 5.2, 0x8bff5a);
 
   // ── monster bumpers (scaled creatures = high-value targets) ──────────────
-  const monsterKeys = ['vampire', 'werewolf', 'zombie', 'skeleton'];
-  function monsterBumper(x, z, key) {
+  // face = base yaw (0 = looking straight at the camera/+z). Each creature gets
+  // its own orientation so the table feels alive instead of a row of clones —
+  // the side monsters turn inward toward the action.
+  function monsterBumper(x, z, key, face = 0) {
     const fig = MONSTERS[key]();
-    const SCALE = 0.42;
+    const SCALE = 0.62;                 // bigger, more readable creatures
     fig.scale.setScalar(SCALE);
     fig.position.set(x, 0.0, z);
-    fig.rotation.y = Math.PI;          // face the camera (+z)
+    fig.rotation.y = face;
     table.add(fig);
+    // limb rig (hip + shoulder pivot groups) so hits flail the actual arms/legs
+    const rig = fig.userData.rig || null;
+    const armBase = fig.userData.armBase || 0;
     // glow post under the monster
-    const post = cyl(0.5, 0.58, 0.16, 14, 0x40206e, 0, 0.08, 0, { e: 0x6a2fae, ei: 0.4 });
+    const post = cyl(0.6, 0.7, 0.16, 14, 0x40206e, 0, 0.08, 0, { e: 0x6a2fae, ei: 0.4 });
     post.position.set(x, 0, z);
     table.add(post);
     const light = new THREE.PointLight(0xff5a8a, 0.0, 4, 2);
     light.position.set(x, 1.6, z);
     table.add(light);
-    circles.push({ x, z, r: 0.56, e: 0.5, kick: 9.5, score: 250, mesh: fig, light, kind: 'monster', punch: 0, base: SCALE });
+    circles.push({ x, z, r: 0.66, e: 0.45, kick: 5.5, score: 250, mesh: fig, light, kind: 'monster', punch: 0, base: SCALE, face, rig, armBase });
   }
-  monsterBumper(-2.0, TOP + 1.3, 'vampire');
-  monsterBumper(0, TOP + 1.05, 'werewolf');
-  monsterBumper(2.0, TOP + 1.3, 'zombie');
-  monsterBumper(-1.0, TOP + 6.4, 'skeleton');
-  monsterBumper(1.0, TOP + 6.4, 'skeleton');
+  monsterBumper(-2.0, TOP + 1.6, 'vampire',  0.5);   // left → turned inward-right
+  monsterBumper(0,    TOP + 1.4, 'werewolf', 0.0);   // centre → straight at player
+  monsterBumper(2.0,  TOP + 1.6, 'zombie',  -0.5);   // right → turned inward-left
+  monsterBumper(-1.6, TOP + 6.4, 'skeleton', 0.8);   // lower-left → facing up the table
+  monsterBumper(1.6,  TOP + 6.4, 'skeleton', -0.8);  // lower-right → facing up the table
 
   // ── flippers ────────────────────────────────────────────────────────────
   function makeFlipper(side) {
     const s = side;
-    const px = s * 1.55, pz = BOTTOM - 0.9;
-    // rest: tip points inward + slightly down; active: tip swings up
-    const rest   = s < 0 ? 0.52 : (Math.PI - 0.52);
-    const active = s < 0 ? -0.30 : (Math.PI + 0.30);
+    const px = s * PIVOT_X, pz = PIVOT_Z;
+    // rest: tip points inward + gently down (leaves a ~1.1 centre gap); active: swings up
+    const rest   = s < 0 ? 0.42 : (Math.PI - 0.42);
+    const active = s < 0 ? -0.45 : (Math.PI + 0.45);
     const group = new THREE.Group();
     group.position.set(px, 0.34, pz);
     const bar = box(FLIP_LEN, 0.34, FLIP_R * 2, 0xffd23f, FLIP_LEN / 2 - 0.1, 0, 0, { e: 0xffa320, ei: 0.25 });
@@ -225,7 +236,8 @@ export function startGame({ canvas, hud }) {
   const ballLight = new THREE.PointLight(0xbfe6ff, 0.7, 5, 2);
   table.add(ballLight);
 
-  const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false };
+  const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false };
+  const LANE_EXIT_Z = TOP + 2.6;   // when the plunged ball rises past this in the lane, gate it left
 
   // ── procedural Web Audio (primed on first user gesture) ─────────────────────
   const audio = createAudio();
@@ -246,7 +258,7 @@ export function startGame({ canvas, hud }) {
 
   function resetBall() {
     ball.x = LANE_CX; ball.z = BOTTOM - 0.6;
-    ball.vx = 0; ball.vz = 0; ball.live = false;
+    ball.vx = 0; ball.vz = 0; ball.live = false; ball.gated = false;
     state.launchT = 0.7;
   }
   function plunge() {
@@ -416,6 +428,10 @@ export function startGame({ canvas, hud }) {
         f.omega = (f.ang - prev) / SUB;
       }
       if (!ball.live) continue;
+      // rolling friction — bleeds energy so the ball escapes bumper clusters and
+      // trickles down to drain instead of pinballing forever (sim has no real
+      // friction). Flips/bumpers re-energise it, so saves still feel snappy.
+      ball.vx *= 0.9988; ball.vz *= 0.9988;
       // gravity
       ball.vz += GRAV * SUB;
       // integrate
@@ -427,6 +443,15 @@ export function startGame({ canvas, hud }) {
       for (const s of segs) collideSeg(s);
       for (const c of circles) collideCircle(c);
       collideFlipper(flipL); collideFlipper(flipR);
+      // launch-lane exit gate: the moment the plunged ball clears the top of the
+      // lane, inject it cleanly into the playfield, heading down-left into play.
+      // (Deterministic, fires once per ball — passive deflectors were unreliable.)
+      if (!ball.gated && ball.x > HW && ball.z < LANE_EXIT_Z) {
+        ball.gated = true;
+        ball.x = HW - 0.7;                 // unambiguously inside the field, clear of the divider
+        ball.vx = -3 - Math.random() * 3;  // drift left
+        ball.vz = 7;                        // head down into the bumpers
+      }
       // drain
       if (ball.z > DRAIN_Z) loseBall();
     }
@@ -474,10 +499,34 @@ export function startGame({ canvas, hud }) {
     // bumper punch + light decay
     for (const c of circles) {
       if (c.punch > 0) {
-        c.punch = Math.max(0, c.punch - dt * 5);
-        const s = 1 + c.punch * (c.kind === 'monster' ? 0.0 : 0.18);
-        if (c.kind === 'pop') c.mesh.scale.setScalar(s);
-        if (c.kind === 'monster') { const b = c.base; c.mesh.scale.setScalar(b * (1 + c.punch * 0.22)); c.mesh.position.y = c.punch * 0.12; }
+        c.punch = Math.max(0, c.punch - dt * (c.kind === 'monster' ? 3.2 : 5));
+        if (c.kind === 'pop') {
+          c.mesh.scale.setScalar(1 + c.punch * 0.18);
+        } else if (c.kind === 'monster') {
+          // got bashed: flail the actual ARMS + LEGS (not just bounce the model)
+          const p = c.punch;
+          const flail = Math.sin(p * 30);            // fast oscillation that eases out with p
+          if (c.rig) {
+            // arms throw up + splay out, with a flailing wave
+            c.rig.armL.rotation.x = c.armBase - 2.3 * p + flail * 0.6 * p;
+            c.rig.armR.rotation.x = c.armBase - 2.3 * p - flail * 0.6 * p;
+            c.rig.armL.rotation.z =  1.3 * p;
+            c.rig.armR.rotation.z = -1.3 * p;
+            // legs kick out alternately
+            c.rig.legL.rotation.x =  flail * 0.9 * p;
+            c.rig.legR.rotation.x = -flail * 0.9 * p;
+          }
+          // small whole-body recoil so it reads as "knocked", limbs do the rest
+          c.mesh.position.y = Math.sin(p * Math.PI) * 0.15;
+          c.mesh.rotation.z = flail * 0.12 * p;
+        }
+      } else if (c.kind === 'monster') {
+        // settle limbs back to rest
+        if (c.rig) {
+          c.rig.armL.rotation.set(c.armBase, 0, 0); c.rig.armR.rotation.set(c.armBase, 0, 0);
+          c.rig.legL.rotation.set(0, 0, 0); c.rig.legR.rotation.set(0, 0, 0);
+        }
+        c.mesh.rotation.z = 0; c.mesh.position.y = 0;
       }
       if (c.light) c.light.intensity = Math.max(c.kind === 'pop' ? 0.5 : 0.0, c.light.intensity - dt * 7);
     }
