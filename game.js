@@ -382,10 +382,20 @@ export function startGame({ canvas, hud }) {
 
   function defeatMonster(c) {
     c.alive = false;
-    c.defeatT = 1;                     // drives the topple-and-sink animation
+    c.defeatT = 1;                     // drives the burst animation
     addScore(c.score * 2);             // defeat bonus
     if (c.light) c.light.intensity = 4;
     audio.monster();
+    // BURST: fling every voxel piece of the figure outward + up with spin
+    for (const part of c.mesh.children) {
+      const px = part.position.x, pz = part.position.z;
+      part.userData.vel = new THREE.Vector3(
+        px * 2 + (Math.random() - 0.5) * 4,
+        2.5 + Math.random() * 3.5,
+        pz * 2 + (Math.random() - 0.5) * 4);
+      part.userData.spin = new THREE.Vector3(
+        (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+    }
   }
 
   function loseBall() {
@@ -634,13 +644,18 @@ export function startGame({ canvas, hud }) {
       }
       const rig = c.rig;
       if (!c.alive) {
-        // DEFEAT — topple onto its back, sink into the floor, shrink away
+        // DEFEAT — the figure bursts into voxel shrapnel that flies out + falls
         if (c.defeatT > 0) {
-          c.defeatT = Math.max(0, c.defeatT - dt * 1.3);
-          const d = 1 - c.defeatT;
-          c.mesh.rotation.set(-d * 1.5, c.face + d * 0.8, 0);
-          c.mesh.position.y = -d * 0.9;
-          c.mesh.scale.setScalar(Math.max(0.001, c.base * (1 - d * 0.5)));
+          c.defeatT = Math.max(0, c.defeatT - dt * 0.9);
+          for (const part of c.mesh.children) {
+            const v = part.userData.vel; if (!v) continue;
+            v.y -= 22 * dt;                                 // gravity on the pieces
+            part.position.x += v.x * dt;
+            part.position.y += v.y * dt;
+            part.position.z += v.z * dt;
+            const sp = part.userData.spin;
+            part.rotation.x += sp.x * dt; part.rotation.y += sp.y * dt; part.rotation.z += sp.z * dt;
+          }
           if (c.defeatT <= 0) { c.mesh.visible = false; if (c.post) c.post.visible = false; }
         }
         if (c.light) c.light.intensity = Math.max(0, c.light.intensity - dt * 4);
