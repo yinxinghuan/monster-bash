@@ -90,16 +90,18 @@ export function startGame({ canvas, hud }) {
   //    flippers in view when the ball is low and the top in view when it's high ─
   const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 120);
   const FOLLOW = {
-    dy: 10.8, dz: 8.4,           // camera height + offset toward the viewer (pulled back = less close)
-    lookDy: -0.6, lookDz: -3.6,  // lookAt offset (into the screen) from focus
+    dy: 9.5, dz: 7.2,            // camera height + offset toward the viewer (base, for a tall phone)
+    lookDy: -0.6, lookDz: -3.2,  // lookAt offset (into the screen) from focus
     focusMin: TOP + 4.5,         // ball at top → camera looks high
     focusMax: BOTTOM - 1.4,      // ball at bottom → flippers stay visible
     preroll: BOTTOM - 1.4,       // BEFORE launch the view sits at the BOTTOM (flippers);
     lerp: 4,                     // following only kicks in once the ball is live (plunged)
+    zoom: 1,                     // aspect-adaptive: <1 pulls the camera in on wider/shorter screens
   };
   let camFocusZ = FOLLOW.preroll;
   function applyCamera() {
-    camera.position.set(0, FOLLOW.dy, camFocusZ + FOLLOW.dz);
+    const z = FOLLOW.zoom;
+    camera.position.set(0, FOLLOW.dy * z, camFocusZ + FOLLOW.dz * z);
     camera.lookAt(0, FOLLOW.lookDy, camFocusZ + FOLLOW.lookDz);
   }
   function placeCamera() { applyCamera(); }  // resize just re-applies; aspect set in onResize
@@ -645,6 +647,9 @@ export function startGame({ canvas, hud }) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // aspect-adaptive zoom: a tall phone (aspect ~0.46) uses the base distance;
+    // wider/shorter screens pull the camera IN so the table still fills the frame
+    FOLLOW.zoom = Math.max(0.7, Math.min(1, 0.46 / (w / h)));
     placeCamera();
   }
   window.addEventListener('resize', onResize);
