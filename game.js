@@ -22,7 +22,7 @@ const ROSTER = { ...MONSTERS, ...MECHS, ...VILLAINS, ...MYTHIC };
 
 // ─── table layout constants (XZ plane, all tunable) ──────────────────────────
 const HW       = 3.5;     // playfield half-width: x ∈ [-HW, HW]
-const TOP      = -8.6;    // far end of the table
+const TOP      = -9.6;    // far end of the table (taller → ball travels higher on launch)
 const BOTTOM   = 3.4;     // near end / drain plane
 const BALL_R   = 0.34;    // ball Ø = 0.68 → EVERY channel the ball travels must be > 0.68
 const LANE_X1  = HW + 0.9;    // launch lane = channel between HW and LANE_X1 (≈0.9 wide)
@@ -32,6 +32,8 @@ const WALL_E   = 0.40;    // wall restitution
 const FLIP_LEN = 1.6;
 const FLIP_R   = 0.20;
 const DRAIN_Z  = BOTTOM;  // past this z = ball lost
+const CONTENT_DZ = 2.4;   // push all monsters/bumpers DOWN this far below TOP, so the
+                          // curved top leaves a clear band for the ball to come over + flow in
 
 // per-creature personality: idle stance + how it reacts when bashed
 const STYLE = {
@@ -165,7 +167,7 @@ export function startGame({ canvas, hud }) {
   // ── CURVED top arc (rounded playfield top, spanning field + launch lane) ──
   // The plunged ball rockets up the lane, hits this arc and is guided up-and-over
   // then down-left into the playfield — the classic shooter-lane → top-arc flow.
-  const ARC_DROP   = 2.4;                         // arc depth — bigger = more curved dome
+  const ARC_DROP   = 3.4;                         // arc depth — bigger = more curved dome
   const ARC_SIDE_Z = TOP + ARC_DROP;             // where the arc meets the side walls
   (function buildTopArc() {
     const cx = (LANE_X1 - HW) / 2;               // arc centre x (covers field + lane)
@@ -278,8 +280,8 @@ export function startGame({ canvas, hud }) {
     for (let k = circles.length - 1; k >= 0; k--) if (circles[k].kind !== 'post') circles.splice(k, 1);
     const L = LEVELS[i % LEVELS.length];
     applyPalette(L.pal);
-    for (const [x, z, c] of L.pops) spawnPop(x, TOP + z, c);
-    for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + sp.z });
+    for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z, c);
+    for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z });
     hud.setLevel && hud.setLevel(i + 1, L.name);
   }
 
@@ -317,7 +319,7 @@ export function startGame({ canvas, hud }) {
   table.add(ballLight);
 
   const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false };
-  const LANE_EXIT_Z = TOP + 2.0;   // near the top of the lane → sweep the ball into the field
+  const LANE_EXIT_Z = TOP + 1.8;   // up near the top → sweep the ball into the field
 
   // ── procedural Web Audio (primed on first user gesture) ─────────────────────
   const audio = createAudio();
@@ -347,7 +349,7 @@ export function startGame({ canvas, hud }) {
   function plunge() {
     ball.live = true;
     ball.vx = (Math.random() - 0.5) * 0.3;
-    ball.vz = -25;         // rocket up the launch lane
+    ball.vz = -28;         // rocket up the launch lane (reaches the top)
     audio.launch();
   }
 
@@ -570,9 +572,11 @@ export function startGame({ canvas, hud }) {
       // top-of-arc sweep: once the plunged ball reaches the top, send it
       // DOWN-LEFT into the playfield (no teleport — it visibly rode up to the
       // top first, now sweeps down through the bumpers). Fires once per ball.
-      if (!ball.gated && ball.x > HW && ball.z < LANE_EXIT_Z) {
+      // wide trigger: the bigger arc can nudge the rising ball just left of HW
+      // before it's low enough, so fire whenever it's high on the right side.
+      if (!ball.gated && ball.z < LANE_EXIT_Z && ball.x > HW - 1.3) {
         ball.vx = -(8 + Math.random() * 3);   // sweep well into the field (toward centre)
-        ball.vz = 2.5;
+        ball.vz = 3;
         ball.gated = true;
       }
       // drain
