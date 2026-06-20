@@ -63,6 +63,18 @@
   }
   #balls .dot.spent { opacity:.22; filter:grayscale(1); transform:scale(.7); }
 
+  /* ── Level chip — top-left under the balls ── */
+  #level {
+    top:max(50px,calc(env(safe-area-inset-top) + 36px)); left:14px;
+    font-family:var(--display); font-size:18px; letter-spacing:.04em; line-height:1; color:#fff;
+    padding:4px 12px; border-radius:999px;
+    background:linear-gradient(140deg, rgba(255,75,208,.85), rgba(176,47,208,.7));
+    border:1px solid rgba(255,255,255,.5); box-shadow:0 4px 14px rgba(0,0,0,.4);
+    text-shadow:0 1px 0 rgba(0,0,0,.3);
+    opacity:0; transition:opacity .3s ease;
+  }
+  #level.show { opacity:1; }
+
   /* ── Multiplier chip — below score ── */
   #mult {
     top:calc(max(64px,calc(env(safe-area-inset-top) + 52px)) + 70px); left:50%;
@@ -292,6 +304,7 @@
   <div id="score" class="hud">0</div>
   <div id="mult" class="hud">×1</div>
   <div id="balls" class="hud"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  <div id="level" class="hud"></div>
   <div id="msg" class="hud"></div>
   <div id="title" class="hud">
     <span class="brand">Monster Bash</span>
@@ -341,12 +354,13 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=3';
+import { startGame } from './game.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
 const multEl  = $('#mult');
 const ballsEl = $('#balls');
+const levelEl = $('#level');
 const msgEl   = $('#msg');
 const titleEl = $('#title');
 const hintEl  = $('#hint');
@@ -379,6 +393,10 @@ const hud = {
   setBalls(n) {
     ballDots.forEach((d, i) => d.classList.toggle('spent', i >= n));
   },
+  setLevel(n, name) {
+    levelEl.textContent = 'LV ' + n + (name ? ' · ' + name : '');
+    levelEl.classList.add('show');
+  },
   setBest(n) { finalBestEl.textContent = String(n); },
   setMsg(t) {
     msgEl.textContent = t;
@@ -388,13 +406,14 @@ const hud = {
   setPhase(p) {
     if (p === 'preroll') {
       scoreEl.classList.remove('show'); multEl.classList.remove('show'); ballsEl.classList.remove('show');
+      levelEl.classList.remove('show');
       titleEl.classList.remove('hidden'); hintEl.classList.add('show'); overEl.classList.remove('show');
       lastScore = 0;
     } else if (p === 'play') {
       scoreEl.classList.add('show'); ballsEl.classList.add('show');
       titleEl.classList.add('hidden'); hintEl.classList.remove('show'); overEl.classList.remove('show');
     } else if (p === 'dead') {
-      overEl.classList.add('show'); multEl.classList.remove('show');
+      overEl.classList.add('show'); multEl.classList.remove('show'); levelEl.classList.remove('show');
     }
   },
   setDeath({ score, best }) {
