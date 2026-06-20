@@ -154,6 +154,18 @@ export function startGame({ canvas, hud }) {
     inlay.receiveShadow = true;
     table.add(inlay);
   })();
+  // backbox — a tall lit panel rising behind the top, so when the camera pans up
+  // to follow a high ball it sees a backdrop (like a real pinball backbox), not void
+  const backMat = new THREE.MeshStandardMaterial({ color: 0x231244, roughness: 0.95, metalness: 0, flatShading: true, emissive: new THREE.Color(0x5a2fae), emissiveIntensity: 0.5 });
+  const backbox = new THREE.Mesh(new THREE.BoxGeometry(HW * 2.6, 7, 0.5), backMat);
+  backbox.position.set(0, 2.4, TOP - 0.8);     // stand it up behind the far end
+  backbox.rotation.x = -0.32;                   // lean back slightly toward the camera
+  table.add(backbox);
+  // a brighter accent strip across the backbox for a marquee feel
+  const backStripMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(0xff4bd0), emissiveIntensity: 0.9 });
+  const backStrip = new THREE.Mesh(new THREE.BoxGeometry(HW * 2.4, 0.5, 0.1), backStripMat);
+  backStrip.position.set(0, 3.4, TOP - 0.95); backStrip.rotation.x = -0.32;
+  table.add(backStrip);
 
   // ── collision data ───────────────────────────────────────────────────────
   const segs   = [];   // walls: {ax,az,bx,bz,e,kick,score,flash}
@@ -296,6 +308,8 @@ export function startGame({ canvas, hud }) {
     key.color.setHex(p.key);
     floor.material.color.setHex(p.floor);
     inlayMat.color.setHex(p.inlay); inlayMat.emissive.setHex(p.inlay);
+    backMat.color.setHex(p.floor); backMat.emissive.setHex(p.inlay);
+    backStripMat.emissive.setHex(p.hemiSky);
   }
 
   // build / rebuild the upper playfield for a level index
