@@ -165,11 +165,12 @@ export function startGame({ canvas, hud }) {
   // ── CURVED top arc (rounded playfield top, spanning field + launch lane) ──
   // The plunged ball rockets up the lane, hits this arc and is guided up-and-over
   // then down-left into the playfield — the classic shooter-lane → top-arc flow.
-  const ARC_SIDE_Z = TOP + 1.3;                  // where the arc meets the side walls
+  const ARC_DROP   = 2.4;                         // arc depth — bigger = more curved dome
+  const ARC_SIDE_Z = TOP + ARC_DROP;             // where the arc meets the side walls
   (function buildTopArc() {
     const cx = (LANE_X1 - HW) / 2;               // arc centre x (covers field + lane)
     const halfW = (LANE_X1 + HW) / 2;
-    const drop = 1.3;                            // how far the side ends sit below the peak
+    const drop = ARC_DROP;                        // how far the side ends sit below the peak
     const R = (halfW * halfW + drop * drop) / (2 * drop);
     const ccz = TOP + R;                         // circle centre z (peak at z=TOP)
     const a0 = Math.asin(halfW / R);
@@ -202,10 +203,10 @@ export function startGame({ canvas, hud }) {
     const bx = s * 2.25,       bz = PIVOT_Z;            // just outboard of the flipper pivot
     wall(ax, az, bx, bz, { e: 0.5, kick: 4.0, score: 50, color: 0x8b2fc0, glow: 0xc24be8, h: 0.66 });
     segs[segs.length - 1].sling = { light: makeSlingLight((ax + bx) / 2, (az + bz) / 2) };
-    // outlane guard peg — sits at the mouth of the outlane and bats most balls
-    // back toward the flipper, so the side channels don't drain so cheaply.
+    // outlane guard peg — sits ABOVE the outlane mouth (not in it) so it bats
+    // SOME balls back toward the flipper while leaving the channel passable.
     // kind 'post' = persists across level rebuilds (not cleared in buildLevel).
-    const gx = s * 3.05, gz = SPLIT_Z - 0.55;
+    const gx = s * 3.05, gz = SPLIT_Z - 1.55;
     const peg = cyl(0.2, 0.2, 0.7, 10, 0xe04898, gx, 0.35, gz, { e: 0xff4bd0, ei: 0.45 });
     table.add(peg);
     circles.push({ x: gx, z: gz, r: 0.24, e: 0.6, kick: 0, score: 0, mesh: peg, light: null, kind: 'post', punch: 0 });
@@ -316,7 +317,7 @@ export function startGame({ canvas, hud }) {
   table.add(ballLight);
 
   const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false };
-  const LANE_EXIT_Z = TOP + 1.7;   // near the top of the arc → sweep the ball into the field
+  const LANE_EXIT_Z = TOP + 2.0;   // near the top of the lane → sweep the ball into the field
 
   // ── procedural Web Audio (primed on first user gesture) ─────────────────────
   const audio = createAudio();
