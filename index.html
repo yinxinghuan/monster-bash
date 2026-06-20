@@ -302,6 +302,13 @@
   }
   #lbClose:active { transform:translateY(2px); background:rgba(255,255,255,.18); }
 
+  /* ── level-transition fade ── */
+  #fade {
+    position:fixed; inset:0; z-index:20; background:#140a26;
+    opacity:0; pointer-events:none; transition:opacity .3s ease;
+  }
+  #fade.on { opacity:1; }
+
   @media (prefers-reduced-motion: reduce) {
     #hint .pad svg { animation:none; }
     #over.show, #over .card { animation:none; }
@@ -331,6 +338,7 @@
     </div>
   </div>
   <div id="lb"></div>
+  <div id="fade"></div>
 </div>
 
 <div id="lbFull">
@@ -364,13 +372,14 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=15';
+import { startGame } from './game.js?v=16';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
 const multEl  = $('#mult');
 const ballsEl = $('#balls');
 const levelEl = $('#level');
+const fadeEl  = $('#fade');
 const msgEl   = $('#msg');
 const titleEl = $('#title');
 const hintEl  = $('#hint');
@@ -420,6 +429,12 @@ const hud = {
   setLevel(n, name) {
     levelEl.textContent = 'LV ' + n + (name ? ' · ' + name : '');
     levelEl.classList.add('show');
+  },
+  levelTransition(cb) {
+    // fade to opaque, rebuild the level hidden at the peak, then fade back in
+    fadeEl.classList.add('on');
+    setTimeout(() => { try { cb && cb(); } catch (e) {} }, 320);
+    setTimeout(() => { fadeEl.classList.remove('on'); }, 520);
   },
   setBest(n) { finalBestEl.textContent = String(n); },
   setMsg(t) {

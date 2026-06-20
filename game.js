@@ -265,13 +265,13 @@ export function startGame({ canvas, hud }) {
   const levelMeshes = [];   // meshes to dispose on level change
 
   function spawnPop(x, z, color) {
-    const r = 0.46;
+    const r = 0.54;
     const g = new THREE.Group();
     g.position.set(x, 0, z);
-    g.add(cyl(r, r + 0.05, 0.16, 16, 0x1a0e36, 0, 0.08, 0));
-    const cap = cyl(r - 0.10, r - 0.02, 0.34, 16, color, 0, 0.33, 0, { e: color, ei: 0.55 });
+    g.add(cyl(r, r + 0.05, 0.17, 16, 0x1a0e36, 0, 0.085, 0));
+    const cap = cyl(r - 0.11, r - 0.02, 0.38, 16, color, 0, 0.36, 0, { e: color, ei: 0.55 });
     g.add(cap);
-    g.add(cyl(0.12, 0.12, 0.16, 10, 0xfff6cf, 0, 0.54, 0, { e: 0xfff6cf, ei: 0.9 }));
+    g.add(cyl(0.13, 0.13, 0.17, 10, 0xfff6cf, 0, 0.58, 0, { e: 0xfff6cf, ei: 0.9 }));
     table.add(g);
     const light = new THREE.PointLight(color, 0.5, 5, 2);
     light.position.set(x, 1.4, z); table.add(light);
@@ -376,7 +376,8 @@ export function startGame({ canvas, hud }) {
     comboT: 0,
     launchT: 0,          // countdown before auto-plunge
     level: 0,            // current level index
-    clearT: 0,           // brief pause/banner when a level is cleared
+    clearT: 0,           // countdown after a clear before the fade-swap
+    clearing: false,     // mid level-clear transition
     stuckT: 0,           // how long the live ball has been idle (anti-stuck)
   };
   hud.setBest && hud.setBest(state.best);
@@ -407,20 +408,20 @@ export function startGame({ canvas, hud }) {
     resetBall();
   }
 
-  // all monsters in the current level defeated → clear, bonus, next level
+  // all monsters defeated → bonus + extra ball + banner now, then (after the
+  // defeat bursts finish) a fade-swap to the next level so it isn't an abrupt cut
   function checkLevelClear() {
-    const alive = circles.some(c => c.kind === 'monster' && c.alive);
-    if (alive) return;
+    if (state.clearing) return;
+    if (circles.some(c => c.kind === 'monster' && c.alive)) return;
     const bonus = 2000 * (state.level + 1);
     addScore(bonus);
-    // clearing a level awards an EXTRA BALL (eases difficulty + rewards progress)
-    state.balls = Math.min(6, state.balls + 1);
+    state.balls = Math.min(6, state.balls + 1);   // extra ball on clear
     hud.setBalls(state.balls);
     flashMsg('LEVEL CLEAR  +1 BALL');
     audio.pop();
-    state.level++;
-    state.clearT = 1.4;
-    buildLevel(state.level);
+    state.clearing = true;
+    state.clearT = 1.1;                            // let the bursts play out + banner show
+    ball.live = false;                            // freeze the ball during the transition
   }
 
   function defeatMonster(c) {
@@ -674,6 +675,18 @@ export function startGame({ canvas, hud }) {
         state.stuckT = 0;
       }
     } else { state.stuckT = 0; }
+
+    // level-clear transition: after the bursts play, fade-swap to the next level
+    if (state.clearing) {
+      state.clearT -= dt;
+      if (state.clearT <= 0) {
+        state.clearing = false;
+        state.level++;
+        const next = state.level;
+        if (hud.levelTransition) hud.levelTransition(() => { buildLevel(next); resetBall(); });
+        else { buildLevel(next); resetBall(); }
+      }
+    }
 
     // follow camera — track the ball's z (clamped), smoothly
     const targetFocus = ball.live
