@@ -372,7 +372,7 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=18';
+import { startGame } from './game.js?v=21';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
@@ -388,6 +388,7 @@ const finalScoreEl = $('#finalScore');
 const finalBestEl  = $('#finalBest');
 // balls are rendered dynamically (extra balls from level clears can exceed 3)
 let lastBallN = -1;
+let hintHideT = null;
 
 let lastScore = 0;
 let scoreBumpT = null, multPopT = null, msgT = null;
@@ -446,11 +447,13 @@ const hud = {
     if (p === 'preroll') {
       scoreEl.classList.remove('show'); multEl.classList.remove('show'); ballsEl.classList.remove('show');
       levelEl.classList.remove('show');
-      titleEl.classList.remove('hidden'); hintEl.classList.add('show'); overEl.classList.remove('show');
+      titleEl.classList.remove('hidden'); hintEl.classList.remove('show'); overEl.classList.remove('show');
       lastScore = 0;
     } else if (p === 'play') {
       scoreEl.classList.add('show'); ballsEl.classList.add('show');
-      titleEl.classList.add('hidden'); hintEl.classList.remove('show'); overEl.classList.remove('show');
+      titleEl.classList.add('hidden'); overEl.classList.remove('show');
+      hintEl.classList.add('show');                 // show flip hint at the start of play
+      clearTimeout(hintHideT); hintHideT = setTimeout(() => hintEl.classList.remove('show'), 4500);
     } else if (p === 'dead') {
       overEl.classList.add('show'); multEl.classList.remove('show'); levelEl.classList.remove('show');
     }

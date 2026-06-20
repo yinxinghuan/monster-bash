@@ -156,18 +156,6 @@ export function startGame({ canvas, hud }) {
     inlay.receiveShadow = true;
     table.add(inlay);
   })();
-  // backbox — a tall lit panel rising behind the top, so when the camera pans up
-  // to follow a high ball it sees a backdrop (like a real pinball backbox), not void
-  const backMat = new THREE.MeshStandardMaterial({ color: 0x231244, roughness: 0.95, metalness: 0, flatShading: true, emissive: new THREE.Color(0x5a2fae), emissiveIntensity: 0.5 });
-  const backbox = new THREE.Mesh(new THREE.BoxGeometry(HW * 2.6, 6, 0.5), backMat);
-  backbox.position.set(0, 3.0, TOP - 2.3);      // stand it WELL BEHIND the arc (no clipping)
-  backbox.rotation.x = -0.16;                    // gentle backward lean
-  table.add(backbox);
-  // a brighter accent strip across the backbox for a marquee feel
-  const backStripMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(0xff4bd0), emissiveIntensity: 0.9 });
-  const backStrip = new THREE.Mesh(new THREE.BoxGeometry(HW * 2.4, 0.45, 0.1), backStripMat);
-  backStrip.position.set(0, 4.3, TOP - 2.38); backStrip.rotation.x = -0.16;
-  table.add(backStrip);
 
   // ── collision data ───────────────────────────────────────────────────────
   const segs   = [];   // walls: {ax,az,bx,bz,e,kick,score,flash}
@@ -310,8 +298,6 @@ export function startGame({ canvas, hud }) {
     key.color.setHex(p.key);
     floor.material.color.setHex(p.floor);
     inlayMat.color.setHex(p.inlay); inlayMat.emissive.setHex(p.inlay);
-    backMat.color.setHex(p.floor); backMat.emissive.setHex(p.inlay);
-    backStripMat.emissive.setHex(p.hemiSky);
   }
 
   // build / rebuild the upper playfield for a level index
@@ -693,12 +679,22 @@ export function startGame({ canvas, hud }) {
       }
     }
 
-    // follow camera — track the ball's z (clamped), smoothly
-    const targetFocus = ball.live
-      ? Math.max(FOLLOW.focusMin, Math.min(FOLLOW.focusMax, ball.z))
-      : FOLLOW.preroll;
-    camFocusZ += (targetFocus - camFocusZ) * Math.min(1, dt * FOLLOW.lerp);
-    applyCamera();
+    if (state.mode === 'preroll') {
+      // dedicated ATTRACT angle — an elevated hero shot of the machine with a
+      // gentle drift. The play (follow) camera takes over once the game starts.
+      const z = FOLLOW.zoom;
+      const sway = Math.sin(t * 0.4) * 0.9;
+      camera.position.set(sway, 8.6 * z, 5.6 * z + 1.6);
+      camera.lookAt(0, 1.4, -8.6);
+      camFocusZ = FOLLOW.preroll;     // keep the follow rig primed for the cut to play
+    } else {
+      // follow camera — track the ball's z (clamped), smoothly
+      const targetFocus = ball.live
+        ? Math.max(FOLLOW.focusMin, Math.min(FOLLOW.focusMax, ball.z))
+        : FOLLOW.preroll;
+      camFocusZ += (targetFocus - camFocusZ) * Math.min(1, dt * FOLLOW.lerp);
+      applyCamera();
+    }
 
     // combo decay
     if (state.comboT > 0) { state.comboT -= dt; if (state.comboT <= 0 && state.mult > 1) { state.mult = 1; hud.setMult(1); } }
