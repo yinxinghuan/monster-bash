@@ -162,13 +162,31 @@ export function startGame({ canvas, hud }) {
   const SPLIT_Z    = 1.25;   // the lane-divider "post" where inlane & outlane fork
   const DROP_Z     = 3.0;    // outlane/flipper walls stop here; below = open drain
 
-  // ── top + side outer walls ────────────────────────────────────────────────
-  wall(-HW, TOP + 1.1, -HW + 1.1, TOP);                 // top-left chamfer
-  wall(-HW + 1.1, TOP, LANE_X1, TOP);                   // top span (covers field + lane)
-  // LEFT outer wall (also the left outlane's outer wall) down to the drop
-  wall(-HW, TOP + 1.1, -HW, DROP_Z);
+  // ── CURVED top arc (rounded playfield top, spanning field + launch lane) ──
+  // The plunged ball rockets up the lane, hits this arc and is guided up-and-over
+  // then down-left into the playfield — the classic shooter-lane → top-arc flow.
+  const ARC_SIDE_Z = TOP + 1.3;                  // where the arc meets the side walls
+  (function buildTopArc() {
+    const cx = (LANE_X1 - HW) / 2;               // arc centre x (covers field + lane)
+    const halfW = (LANE_X1 + HW) / 2;
+    const drop = 1.3;                            // how far the side ends sit below the peak
+    const R = (halfW * halfW + drop * drop) / (2 * drop);
+    const ccz = TOP + R;                         // circle centre z (peak at z=TOP)
+    const a0 = Math.asin(halfW / R);
+    const N = 16;
+    let px = -HW, pz = ARC_SIDE_Z;
+    for (let i = 1; i <= N; i++) {
+      const a = -a0 + (2 * a0) * (i / N);
+      const nx = cx + R * Math.sin(a);
+      const nz = ccz - R * Math.cos(a);
+      wall(px, pz, nx, nz);
+      px = nx; pz = nz;
+    }
+  })();
+  // LEFT outer wall (also left outlane outer) from the arc down to the drop
+  wall(-HW, ARC_SIDE_Z, -HW, DROP_Z);
   // RIGHT: launch-lane outer wall + divider (divider also = right outlane outer wall)
-  wall(LANE_X1, TOP, LANE_X1, BOTTOM - 0.4);            // lane outer wall
+  wall(LANE_X1, ARC_SIDE_Z, LANE_X1, BOTTOM - 0.4);     // lane outer wall (from arc down)
   wall(HW, DIVIDER_TOP_Z, HW, DROP_Z);                  // divider / right outlane outer
 
   // ── per-side bottom: outlane channel + slingshot(=inlane outer wall) ───────
@@ -184,6 +202,13 @@ export function startGame({ canvas, hud }) {
     const bx = s * 2.25,       bz = PIVOT_Z;            // just outboard of the flipper pivot
     wall(ax, az, bx, bz, { e: 0.5, kick: 4.0, score: 50, color: 0x8b2fc0, glow: 0xc24be8, h: 0.66 });
     segs[segs.length - 1].sling = { light: makeSlingLight((ax + bx) / 2, (az + bz) / 2) };
+    // outlane guard peg — sits at the mouth of the outlane and bats most balls
+    // back toward the flipper, so the side channels don't drain so cheaply.
+    // kind 'post' = persists across level rebuilds (not cleared in buildLevel).
+    const gx = s * 3.05, gz = SPLIT_Z - 0.55;
+    const peg = cyl(0.2, 0.2, 0.7, 10, 0xe04898, gx, 0.35, gz, { e: 0xff4bd0, ei: 0.45 });
+    table.add(peg);
+    circles.push({ x: gx, z: gz, r: 0.24, e: 0.6, kick: 0, score: 0, mesh: peg, light: null, kind: 'post', punch: 0 });
   }
   function makeSlingLight(x, z) {
     const l = new THREE.PointLight(0xff4bd0, 0, 4, 2);
@@ -248,7 +273,8 @@ export function startGame({ canvas, hud }) {
     // tear down previous content
     for (const mesh of levelMeshes) table.remove(mesh);
     levelMeshes.length = 0;
-    for (let k = circles.length - 1; k >= 0; k--) circles.splice(k, 1);
+    // clear only per-level content; keep fixed 'post' pegs
+    for (let k = circles.length - 1; k >= 0; k--) if (circles[k].kind !== 'post') circles.splice(k, 1);
     const L = LEVELS[i % LEVELS.length];
     applyPalette(L.pal);
     for (const [x, z, c] of L.pops) spawnPop(x, TOP + z, c);
@@ -290,7 +316,7 @@ export function startGame({ canvas, hud }) {
   table.add(ballLight);
 
   const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false };
-  const LANE_EXIT_Z = TOP + 2.6;   // plunged ball clears the lane top here → inject into field
+  const LANE_EXIT_Z = TOP + 1.7;   // near the top of the arc → sweep the ball into the field
 
   // ── procedural Web Audio (primed on first user gesture) ─────────────────────
   const audio = createAudio();
@@ -341,8 +367,11 @@ export function startGame({ canvas, hud }) {
     if (alive) return;
     const bonus = 2000 * (state.level + 1);
     addScore(bonus);
-    flashMsg('LEVEL CLEAR  +' + bonus);
-    audio.over && audio.pop();
+    // clearing a level awards an EXTRA BALL (eases difficulty + rewards progress)
+    state.balls = Math.min(6, state.balls + 1);
+    hud.setBalls(state.balls);
+    flashMsg('LEVEL CLEAR  +1 BALL');
+    audio.pop();
     state.level++;
     state.clearT = 1.4;
     buildLevel(state.level);
@@ -462,6 +491,7 @@ export function startGame({ canvas, hud }) {
     const vn = ball.vx * nx + ball.vz * nz;
     if (vn < 0) { ball.vx -= (1 + c.e) * vn * nx; ball.vz -= (1 + c.e) * vn * nz; }
     if (c.kick) { ball.vx += nx * c.kick; ball.vz += nz * c.kick; }
+    if (c.kind === 'post') return;   // guard peg: pure bounce, no score/punch
     // monsters DON'T kick (ball flows past); they take HP and get defeated.
     // A cooldown stops a resting ball from chipping HP every frame.
     if (c.kind === 'monster') {
@@ -536,14 +566,13 @@ export function startGame({ canvas, hud }) {
       for (const s of segs) collideSeg(s);
       for (const c of circles) collideCircle(c);
       collideFlipper(flipL); collideFlipper(flipR);
-      // launch-lane exit: the moment the plunged ball clears the lane top, inject
-      // it into the playfield near the top so it falls back DOWN through the
-      // bumpers/monsters to the flippers (proper pinball flow). Fires once/ball.
+      // top-of-arc sweep: once the plunged ball reaches the top, send it
+      // DOWN-LEFT into the playfield (no teleport — it visibly rode up to the
+      // top first, now sweeps down through the bumpers). Fires once per ball.
       if (!ball.gated && ball.x > HW && ball.z < LANE_EXIT_Z) {
+        ball.vx = -(8 + Math.random() * 3);   // sweep well into the field (toward centre)
+        ball.vz = 2.5;
         ball.gated = true;
-        ball.x = HW - 0.8;                  // top-right of the play area
-        ball.vx = -2 - Math.random() * 2;   // drift in toward the field
-        ball.vz = 4;                         // start descending
       }
       // drain
       if (ball.z > DRAIN_Z) loseBall();
@@ -592,6 +621,7 @@ export function startGame({ canvas, hud }) {
     // bumper / monster animation — state machine: defeat > hit(style) > idle
     for (const c of circles) {
       if (c.cool > 0) c.cool -= dt;
+      if (c.kind === 'post') continue;          // static guard peg
       if (c.kind === 'pop') {
         if (c.punch > 0) { c.punch = Math.max(0, c.punch - dt * 5); c.mesh.scale.setScalar(1 + c.punch * 0.18); }
         if (c.light) c.light.intensity = Math.max(0.5, c.light.intensity - dt * 7);
