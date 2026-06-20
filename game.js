@@ -122,11 +122,28 @@ export function startGame({ canvas, hud }) {
   floor.material = new THREE.MeshStandardMaterial({ color: 0x231244, roughness: 0.92, metalness: 0, flatShading: true });
   floor.receiveShadow = true;
   table.add(floor);
-  // glowing center inlay (own material → recolour per level)
-  const inlay = box(HW * 1.4, 0.02, (BOTTOM - TOP) * 0.62, 0x3a1f6e,
-    0, 0.02, (TOP + BOTTOM) / 2 - 0.4);
-  inlay.material = new THREE.MeshStandardMaterial({ color: 0x3a1f6e, roughness: 0.9, metalness: 0, flatShading: true, emissive: new THREE.Color(0x5a2fae), emissiveIntensity: 0.35 });
-  table.add(inlay);
+  // glowing center inlay — CAPSULE / racetrack shape (rounded ends) echoing the
+  // curved top, own material so it recolours per level
+  const inlayMat = new THREE.MeshStandardMaterial({ color: 0x3a1f6e, roughness: 0.9, metalness: 0, flatShading: true, emissive: new THREE.Color(0x5a2fae), emissiveIntensity: 0.35 });
+  (function buildInlay() {
+    const w = HW * 1.5, len = (BOTTOM - TOP) * 0.66, r = (HW * 1.5) / 2;  // r=w/2 → full capsule ends
+    const hw = w / 2, x0 = -hw, y0 = -len / 2;
+    const sh = new THREE.Shape();
+    sh.moveTo(x0 + r, y0);
+    sh.lineTo(x0 + w - r, y0);
+    sh.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+    sh.lineTo(x0 + w, y0 + len - r);
+    sh.quadraticCurveTo(x0 + w, y0 + len, x0 + w - r, y0 + len);
+    sh.lineTo(x0 + r, y0 + len);
+    sh.quadraticCurveTo(x0, y0 + len, x0, y0 + len - r);
+    sh.lineTo(x0, y0 + r);
+    sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+    const inlay = new THREE.Mesh(new THREE.ShapeGeometry(sh), inlayMat);
+    inlay.rotation.x = -Math.PI / 2;
+    inlay.position.set(0, 0.02, (TOP + BOTTOM) / 2 - 0.4);
+    inlay.receiveShadow = true;
+    table.add(inlay);
+  })();
 
   // ── collision data ───────────────────────────────────────────────────────
   const segs   = [];   // walls: {ax,az,bx,bz,e,kick,score,flash}
@@ -268,7 +285,7 @@ export function startGame({ canvas, hud }) {
     hemi.color.setHex(p.hemiSky); hemi.groundColor.setHex(p.hemiGround);
     key.color.setHex(p.key);
     floor.material.color.setHex(p.floor);
-    inlay.material.color.setHex(p.inlay); inlay.material.emissive.setHex(p.inlay);
+    inlayMat.color.setHex(p.inlay); inlayMat.emissive.setHex(p.inlay);
   }
 
   // build / rebuild the upper playfield for a level index
@@ -336,6 +353,7 @@ export function startGame({ canvas, hud }) {
     launchT: 0,          // countdown before auto-plunge
     level: 0,            // current level index
     clearT: 0,           // brief pause/banner when a level is cleared
+    stuckT: 0,           // how long the live ball has been idle (anti-stuck)
   };
   hud.setBest && hud.setBest(state.best);
   buildLevel(0);              // populate the table at preroll (no empty table — scroll-feed rule)
@@ -620,6 +638,18 @@ export function startGame({ canvas, hud }) {
     }
 
     physics(dt);
+
+    // anti-stuck: if the live ball idles too long (trapped in a corner / on a
+    // flat spot — the "game stalls" case), nudge it back toward the flippers so
+    // play never gets stuck.
+    if (state.mode === 'play' && ball.live) {
+      if (Math.hypot(ball.vx, ball.vz) < 1.3) state.stuckT += dt; else state.stuckT = 0;
+      if (state.stuckT > 2.5) {
+        ball.vz += 5 + Math.random() * 2;            // shove down toward the flippers
+        ball.vx += (Math.random() - 0.5) * 6;
+        state.stuckT = 0;
+      }
+    } else { state.stuckT = 0; }
 
     // combo decay
     if (state.comboT > 0) { state.comboT -= dt; if (state.comboT <= 0 && state.mult > 1) { state.mult = 1; hud.setMult(1); } }
