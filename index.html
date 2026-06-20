@@ -115,16 +115,24 @@
     transition:opacity .35s ease, transform .35s ease;
   }
   #title .brand {
-    display:block; font-family:var(--display); font-weight:400; font-size:78px;
-    letter-spacing:.02em;
-    background:linear-gradient(170deg, #fff 2%, var(--magenta) 46%, #b02fd0 100%);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 4px 0 rgba(0,0,0,.35)) drop-shadow(0 0 22px rgba(255,75,208,.55));
-    padding:.04em .1em .12em;
+    display:flex; flex-direction:column; align-items:center; line-height:.8;
+    padding:.04em 0 .1em;
+  }
+  #title .l1 {
+    font-family:var(--display); font-weight:400; font-size:48px; letter-spacing:.07em;
+    color:#fff; -webkit-text-stroke:2px #1a0628; paint-order:stroke fill;
+    text-shadow:0 0 18px var(--magenta), 0 3px 0 rgba(0,0,0,.45);
+    transform:rotate(-2.5deg);
+  }
+  #title .l2 {
+    font-family:var(--display); font-weight:400; font-size:96px; letter-spacing:.02em;
+    color:var(--neon); -webkit-text-stroke:3px #08210a; paint-order:stroke fill;
+    text-shadow:0 0 26px rgba(139,255,90,.85), 0 5px 0 rgba(0,0,0,.5);
+    transform:rotate(1.5deg); margin-top:-4px;
   }
   #title .sub {
     display:block; font-weight:600; font-size:13px; letter-spacing:.3em;
-    color:rgba(255,255,255,.72); margin-top:2px; text-transform:uppercase;
+    color:rgba(255,255,255,.78); margin-top:10px; text-transform:uppercase;
   }
   #title.hidden { opacity:0; transform:translate(-50%,-12px); }
 
@@ -309,7 +317,7 @@
   <div id="level" class="hud"></div>
   <div id="msg" class="hud"></div>
   <div id="title" class="hud">
-    <span class="brand">Monster Bash</span>
+    <span class="brand"><span class="l1">MONSTER</span><span class="l2">BASH</span></span>
     <span class="sub">tap left &amp; right to flip</span>
   </div>
   <div id="hint" class="hud">
@@ -356,7 +364,7 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=8';
+import { startGame } from './game.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');

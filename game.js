@@ -338,7 +338,8 @@ export function startGame({ canvas, hud }) {
     clearT: 0,           // brief pause/banner when a level is cleared
   };
   hud.setBest && hud.setBest(state.best);
-  hud.setPhase('preroll');
+  buildLevel(0);              // populate the table at preroll (no empty table — scroll-feed rule)
+  hud.setPhase('preroll');    // (hides the level chip that buildLevel showed, until play starts)
 
   function resetBall() {
     // ball waits in the launch lane (right channel), then auto-plunges up
