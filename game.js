@@ -22,7 +22,7 @@ const ROSTER = { ...MONSTERS, ...MECHS, ...VILLAINS, ...MYTHIC };
 
 // ─── table layout constants (XZ plane, all tunable) ──────────────────────────
 const HW       = 3.5;     // playfield half-width: x ∈ [-HW, HW]
-const TOP      = -9.6;    // far end of the table (taller → ball travels higher on launch)
+const TOP      = -13.0;   // far end — long table; the camera follows the ball up/down it
 const BOTTOM   = 3.4;     // near end / drain plane
 const BALL_R   = 0.34;    // ball Ø = 0.68 → EVERY channel the ball travels must be > 0.68
 const LANE_X1  = HW + 0.9;    // launch lane = channel between HW and LANE_X1 (≈0.9 wide)
@@ -32,8 +32,9 @@ const WALL_E   = 0.40;    // wall restitution
 const FLIP_LEN = 1.6;
 const FLIP_R   = 0.20;
 const DRAIN_Z  = BOTTOM;  // past this z = ball lost
-const CONTENT_DZ = 2.4;   // push all monsters/bumpers DOWN this far below TOP, so the
+const CONTENT_DZ = 3.0;   // push all monsters/bumpers DOWN this far below TOP, so the
                           // curved top leaves a clear band for the ball to come over + flow in
+const CONTENT_SPREAD = 1.5; // spread the cast/bumpers further apart down the long table
 
 // per-creature personality: idle stance + how it reacts when bashed
 const STYLE = {
@@ -83,17 +84,26 @@ export function startGame({ canvas, hud }) {
   renderer.setClearColor(0x140a26);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x140a26, 16, 44);
+  scene.fog = new THREE.Fog(0x140a26, 14, 40);
 
-  // ── camera — front-above, table recedes upward (portrait cabinet view) ──────
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 120);
-  function placeCamera() {
-    const portrait = (canvas.clientHeight || 1) >= (canvas.clientWidth || 1);
-    // pull back + flatten a touch on wide screens so the whole table stays framed
-    camera.position.set(0, portrait ? 9.4 : 11.0, BOTTOM + (portrait ? 5.2 : 7.0));
-    camera.lookAt(0, -0.4, (TOP + BOTTOM) / 2 - 0.6);
+  // ── follow camera — tracks the ball up/down the long table; clamps keep the
+  //    flippers in view when the ball is low and the top in view when it's high ─
+  const camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
+  const FOLLOW = {
+    dy: 8.2, dz: 6.4,            // camera height + offset toward the viewer from focus
+    lookDy: -0.6, lookDz: -3.2,  // lookAt offset (into the screen) from focus
+    focusMin: TOP + 4.5,         // ball at top → camera looks high (balanced vs empty sky above)
+    focusMax: BOTTOM - 1.6,      // ball at bottom → flippers stay visible
+    preroll: -5.0,               // framing when no ball is live (shows the monster row)
+    lerp: 3.5,
+  };
+  let camFocusZ = FOLLOW.preroll;
+  function applyCamera() {
+    camera.position.set(0, FOLLOW.dy, camFocusZ + FOLLOW.dz);
+    camera.lookAt(0, FOLLOW.lookDy, camFocusZ + FOLLOW.lookDz);
   }
-  placeCamera();
+  function placeCamera() { applyCamera(); }  // resize just re-applies; aspect set in onResize
+  applyCamera();
 
   // ── lighting — moody purple ambient + warm key + cool rim ───────────────────
   const hemi = new THREE.HemisphereLight(0x9a7bd6, 0x241433, 0.85);
@@ -297,8 +307,8 @@ export function startGame({ canvas, hud }) {
     for (let k = circles.length - 1; k >= 0; k--) if (circles[k].kind !== 'post') circles.splice(k, 1);
     const L = LEVELS[i % LEVELS.length];
     applyPalette(L.pal);
-    for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z, c);
-    for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z });
+    for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
+    for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z * CONTENT_SPREAD });
     hud.setLevel && hud.setLevel(i + 1, L.name);
   }
 
@@ -650,6 +660,13 @@ export function startGame({ canvas, hud }) {
         state.stuckT = 0;
       }
     } else { state.stuckT = 0; }
+
+    // follow camera — track the ball's z (clamped), smoothly
+    const targetFocus = ball.live
+      ? Math.max(FOLLOW.focusMin, Math.min(FOLLOW.focusMax, ball.z))
+      : FOLLOW.preroll;
+    camFocusZ += (targetFocus - camFocusZ) * Math.min(1, dt * FOLLOW.lerp);
+    applyCamera();
 
     // combo decay
     if (state.comboT > 0) { state.comboT -= dt; if (state.comboT <= 0 && state.mult > 1) { state.mult = 1; hud.setMult(1); } }
