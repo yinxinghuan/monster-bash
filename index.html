@@ -136,6 +136,23 @@
   }
   #title.hidden { opacity:0; transform:translate(-50%,-12px); }
 
+  /* ── START button — clear begin affordance on the attract screen ── */
+  #start {
+    bottom:calc(20% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    z-index:8; pointer-events:auto; cursor:pointer; display:none;
+    font-family:var(--display); font-weight:400; font-size:34px; letter-spacing:.05em; color:#160a2a;
+    padding:14px 44px; border-radius:999px;
+    background:linear-gradient(150deg, var(--neon), #4fc83a);
+    box-shadow:0 10px 28px rgba(79,200,58,.5), 0 0 32px rgba(139,255,90,.5), inset 0 1px 0 rgba(255,255,255,.55);
+    text-shadow:0 1px 0 rgba(255,255,255,.4);
+  }
+  #start.show { display:block; animation:mb-startpulse 1.2s ease-in-out infinite; }
+  #start:active { filter:brightness(1.1); }
+  @keyframes mb-startpulse {
+    0%,100% { transform:translateX(-50%) scale(1); }
+    50% { transform:translateX(-50%) scale(1.06); }
+  }
+
   /* ── control hint — two flipper pads with finger taps ── */
   #hint {
     bottom:calc(13% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
@@ -327,6 +344,7 @@
     <span class="brand"><span class="l1">MONSTER</span><span class="l2">BASH</span></span>
     <span class="sub">tap left &amp; right to flip</span>
   </div>
+  <div id="start" class="hud">TAP TO PLAY</div>
   <div id="hint" class="hud">
     <div class="pad l">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.92-1.38z"/></svg>
@@ -372,7 +390,7 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=21';
+import { startGame } from './game.js?v=22';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
@@ -382,6 +400,7 @@ const levelEl = $('#level');
 const fadeEl  = $('#fade');
 const msgEl   = $('#msg');
 const titleEl = $('#title');
+const startEl = $('#start');
 const hintEl  = $('#hint');
 const overEl  = $('#over');
 const finalScoreEl = $('#finalScore');
@@ -437,6 +456,11 @@ const hud = {
     setTimeout(() => { try { cb && cb(); } catch (e) {} }, 320);
     setTimeout(() => { fadeEl.classList.remove('on'); }, 520);
   },
+  showHint() {
+    // shown by the game the first time the ball nears the flippers, then auto-fades
+    hintEl.classList.add('show');
+    clearTimeout(hintHideT); hintHideT = setTimeout(() => hintEl.classList.remove('show'), 3500);
+  },
   setBest(n) { finalBestEl.textContent = String(n); },
   setMsg(t) {
     msgEl.textContent = t;
@@ -446,16 +470,16 @@ const hud = {
   setPhase(p) {
     if (p === 'preroll') {
       scoreEl.classList.remove('show'); multEl.classList.remove('show'); ballsEl.classList.remove('show');
-      levelEl.classList.remove('show');
-      titleEl.classList.remove('hidden'); hintEl.classList.remove('show'); overEl.classList.remove('show');
+      levelEl.classList.remove('show'); hintEl.classList.remove('show');
+      titleEl.classList.remove('hidden'); startEl.classList.add('show'); overEl.classList.remove('show');
       lastScore = 0;
     } else if (p === 'play') {
       scoreEl.classList.add('show'); ballsEl.classList.add('show');
-      titleEl.classList.add('hidden'); overEl.classList.remove('show');
-      hintEl.classList.add('show');                 // show flip hint at the start of play
-      clearTimeout(hintHideT); hintHideT = setTimeout(() => hintEl.classList.remove('show'), 4500);
+      titleEl.classList.add('hidden'); startEl.classList.remove('show'); overEl.classList.remove('show');
+      hintEl.classList.remove('show');               // flip hint shows later, when the ball nears the flippers
     } else if (p === 'dead') {
       overEl.classList.add('show'); multEl.classList.remove('show'); levelEl.classList.remove('show');
+      startEl.classList.remove('show'); hintEl.classList.remove('show');
     }
   },
   setDeath({ score, best }) {
@@ -627,6 +651,10 @@ startGame({ canvas, hud });
 
 $('#again').addEventListener('click', () => {
   if (window.__mb && window.__mb.gameplay) window.__mb.gameplay.reset();
+});
+startEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (window.__mb && window.__mb.startGameRun) window.__mb.startGameRun();
 });
 overRankEl.addEventListener('click', openLbFull);
 </script>

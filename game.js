@@ -367,6 +367,7 @@ export function startGame({ canvas, hud }) {
     clearT: 0,           // countdown after a clear before the fade-swap
     clearing: false,     // mid level-clear transition
     stuckT: 0,           // how long the live ball has been idle (anti-stuck)
+    hintShown: false,    // flip hint shown once (when the ball first nears the flippers)
   };
   hud.setBest && hud.setBest(state.best);
   buildLevel(0);              // populate the table at preroll (no empty table — scroll-feed rule)
@@ -388,7 +389,7 @@ export function startGame({ canvas, hud }) {
   function startGameRun() {
     state.mode = 'play';
     state.score = 0; state.balls = 3; state.mult = 1; state.comboT = 0;
-    state.level = 0; state.clearT = 0;
+    state.level = 0; state.clearT = 0; state.hintShown = false;
     hud.setScore(0); hud.setBalls(3); hud.setMult(1);
     hud.setPhase('play');
     audio.prime(); audio.hum(true);
@@ -666,6 +667,13 @@ export function startGame({ canvas, hud }) {
         state.stuckT = 0;
       }
     } else { state.stuckT = 0; }
+
+    // flip-hint: first time the ball descends toward the flippers, show the
+    // LEFT/RIGHT hint — the moment the player actually needs to flip
+    if (!state.hintShown && ball.live && ball.z > 0.5 && ball.vz > 0) {
+      state.hintShown = true;
+      if (hud.showHint) hud.showHint();
+    }
 
     // level-clear transition: after the bursts play, fade-swap to the next level
     if (state.clearing) {
