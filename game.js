@@ -53,7 +53,7 @@ const STYLE = {
 // LEVELS — fixed bottom (flippers/lanes/drain) is shared; each level swaps the
 // UPPER playfield: monster cast + formation + pop-bumper layout + palette.
 // `m(key,x,z,face,hp,scale?)` builds a monster spec. Positions use z relative to TOP.
-const m = (key, x, z, face = 0, hp = 2, scale = 0.62) => ({ key, x, z, face, hp, scale });
+const m = (key, x, z, face = 0, hp = 3, scale = 0.62) => ({ key, x, z, face, hp, scale });
 const LEVELS = [
   { name: 'Crypt', pal: { fog: 0x140a26, hemiSky: 0x9a7bd6, hemiGround: 0x241433, key: 0xfff0d8, floor: 0x231244, inlay: 0x5a2fae },
     cast: [ m('vampire', -2.2, 1.6, 0.5), m('werewolf', 0, 1.4, 0), m('zombie', 2.2, 1.6, -0.5), m('skeleton', -1.7, 6.2, 0.8), m('skeleton', 1.7, 6.2, -0.8) ],
@@ -88,14 +88,14 @@ export function startGame({ canvas, hud }) {
 
   // ── follow camera — tracks the ball up/down the long table; clamps keep the
   //    flippers in view when the ball is low and the top in view when it's high ─
-  const camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
+  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 120);
   const FOLLOW = {
-    dy: 8.2, dz: 6.4,            // camera height + offset toward the viewer from focus
-    lookDy: -0.6, lookDz: -3.2,  // lookAt offset (into the screen) from focus
-    focusMin: TOP + 4.5,         // ball at top → camera looks high (balanced vs empty sky above)
-    focusMax: BOTTOM - 1.6,      // ball at bottom → flippers stay visible
-    preroll: -5.0,               // framing when no ball is live (shows the monster row)
-    lerp: 3.5,
+    dy: 10.8, dz: 8.4,           // camera height + offset toward the viewer (pulled back = less close)
+    lookDy: -0.6, lookDz: -3.6,  // lookAt offset (into the screen) from focus
+    focusMin: TOP + 4.5,         // ball at top → camera looks high
+    focusMax: BOTTOM - 1.4,      // ball at bottom → flippers stay visible
+    preroll: BOTTOM - 1.4,       // BEFORE launch the view sits at the BOTTOM (flippers);
+    lerp: 4,                     // following only kicks in once the ball is live (plunged)
   };
   let camFocusZ = FOLLOW.preroll;
   function applyCamera() {
@@ -265,13 +265,13 @@ export function startGame({ canvas, hud }) {
   const levelMeshes = [];   // meshes to dispose on level change
 
   function spawnPop(x, z, color) {
-    const r = 0.62;
+    const r = 0.46;
     const g = new THREE.Group();
     g.position.set(x, 0, z);
-    g.add(cyl(r, r + 0.06, 0.18, 16, 0x1a0e36, 0, 0.09, 0));
-    const cap = cyl(r - 0.12, r - 0.02, 0.42, 16, color, 0, 0.4, 0, { e: color, ei: 0.55 });
+    g.add(cyl(r, r + 0.05, 0.16, 16, 0x1a0e36, 0, 0.08, 0));
+    const cap = cyl(r - 0.10, r - 0.02, 0.34, 16, color, 0, 0.33, 0, { e: color, ei: 0.55 });
     g.add(cap);
-    g.add(cyl(0.14, 0.14, 0.18, 10, 0xfff6cf, 0, 0.66, 0, { e: 0xfff6cf, ei: 0.9 }));
+    g.add(cyl(0.12, 0.12, 0.16, 10, 0xfff6cf, 0, 0.54, 0, { e: 0xfff6cf, ei: 0.9 }));
     table.add(g);
     const light = new THREE.PointLight(color, 0.5, 5, 2);
     light.position.set(x, 1.4, z); table.add(light);
