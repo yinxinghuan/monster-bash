@@ -36,8 +36,12 @@ const DRAIN_Z  = BOTTOM;  // past this z = ball lost
 const CONTENT_DZ = 3.0;   // push all monsters/bumpers DOWN this far below TOP, so the
                           // curved top leaves a clear band for the ball to come over + flow in
 const CONTENT_SPREAD = 1.5; // spread the cast/bumpers further apart down the long table
-const MAX_BALLS = 6;        // ball-counter cap (extra balls stack up to here)
-const EXTRA_BALL_EVERY = 5000; // every N points → a free ball ("续命" milestone)
+const MAX_BALLS = 5;        // ball-counter cap (extra balls stack up to here)
+// Free-ball milestones ESCALATE: the first comes at BASE, each next one costs
+// GROWTH× more — so free balls can't keep pace with a high score forever and the
+// run eventually ends (was a flat 5000 → game never ended).
+const EXTRA_BALL_BASE = 8000;
+const EXTRA_BALL_GROWTH = 1.7;
 
 // per-creature personality: idle stance + how it reacts when bashed
 const STYLE = {
@@ -319,6 +323,23 @@ export function startGame({ canvas, hud }) {
     circles.push({ x, z, r: 0.3, e: 0.85, kick: 0, score: 20, mesh: g, light, kind: 'pop', punch: 0 });
   }
 
+  // monster pedestal — a beveled dark plinth + a glowing neon rim ring + a faint
+  // rune-lit top face (vs the old flat purple disc). Glow tracks the level colour.
+  // Returns a Group so it moves/hides with the monster like the old single mesh.
+  let baseGlow = 0x5a2fae;   // updated per level from the palette inlay
+  function makeMonsterBase(scale) {
+    const s = scale / 0.62;
+    const g = new THREE.Group();
+    const plinth = cyl(0.66 * s, 0.82 * s, 0.12, 24, 0x160c28, 0, 0.06, 0);              // dark beveled plinth
+    const tier   = cyl(0.54 * s, 0.66 * s, 0.06, 24, 0x2a1840, 0, 0.15, 0,
+      { e: baseGlow, ei: 0.45 });                                                        // glowing top tier
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.64 * s, 0.045 * s, 8, 28),
+      M(baseGlow, 0.4, baseGlow, 1.0));                                                  // bright neon rim
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.12; ring.castShadow = false;
+    g.add(plinth, tier, ring);
+    return g;
+  }
+
   function spawnMonster(spec) {
     const fig = ROSTER[spec.key]();
     const SCALE = spec.scale || 0.62;
@@ -326,7 +347,8 @@ export function startGame({ canvas, hud }) {
     fig.position.set(spec.x, 0, spec.z);
     fig.rotation.y = spec.face || 0;
     table.add(fig);
-    const post = cyl(0.6 * (SCALE / 0.62), 0.7 * (SCALE / 0.62), 0.16, 14, 0x40206e, spec.x, 0.08, spec.z, { e: 0x6a2fae, ei: 0.4 });
+    const post = makeMonsterBase(SCALE);
+    post.position.set(spec.x, 0, spec.z);
     table.add(post);
     const light = new THREE.PointLight(0xff5a8a, 0, 4, 2);
     light.position.set(spec.x, 1.6, spec.z); table.add(light);
@@ -349,6 +371,7 @@ export function startGame({ canvas, hud }) {
     key.color.setHex(p.key);
     floor.material.color.setHex(p.floor);
     inlayMat.color.setHex(p.inlay); inlayMat.emissive.setHex(p.inlay);
+    baseGlow = p.inlay;   // monster pedestals glow the level colour
     // tint the mirror lane toward the level's inlay colour (kept mid-dark so the
     // reflections read without washing out)
     if (reflector && reflector.material && reflector.material.uniforms && reflector.material.uniforms.color) {
@@ -368,28 +391,44 @@ export function startGame({ canvas, hud }) {
     for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
     if (L.obs) for (const [x, z, c] of L.obs) spawnObstacle(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
     for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z * CONTENT_SPREAD });
+    setMidFlippers(i >= 2);   // upper flippers from level 3 onward (the harder levels)
     hud.setLevel && hud.setLevel(i + 1, L.name);
   }
 
   // ── flippers ────────────────────────────────────────────────────────────
-  function makeFlipper(side) {
+  // A MID pair (upper flippers) is added for the harder later levels so the
+  // player can re-launch a ball that's fallen below the cast back up to it.
+  // Same left/right input drives every flipper on that side — no new controls.
+  const MID_PIVOT_X = 2.55, MID_PIVOT_Z = 0.2, MID_FLIP_LEN = 1.3;
+  function makeFlipper(side, px, pz, len, mid = false) {
     const s = side;
-    const px = s * PIVOT_X, pz = PIVOT_Z;
-    // rest: tip points inward + gently down (leaves a ~1.1 centre gap); active: swings up
+    // rest: tip points inward + gently down (leaves a centre gap); active: swings up
     const rest   = s < 0 ? 0.50 : (Math.PI - 0.50);   // ~29° below horizontal, tips toward drain
     const active = s < 0 ? -0.50 : (Math.PI + 0.50);  // strong upward flip
     const group = new THREE.Group();
     group.position.set(px, 0.34, pz);
-    const bar = box(FLIP_LEN, 0.34, FLIP_R * 2, 0xffd23f, FLIP_LEN / 2 - 0.1, 0, 0, { e: 0xffa320, ei: 0.25 });
+    const col = mid ? 0x49c2ff : 0xffd23f;            // mid pair is cool-blue to read as the upper tier
+    const ec  = mid ? 0x2f8fe0 : 0xffa320;
+    const bar = box(len, 0.34, FLIP_R * 2, col, len / 2 - 0.1, 0, 0, { e: ec, ei: 0.3 });
     group.add(bar);
-    group.add(cyl(0.26, 0.26, 0.4, 12, 0xe04898, 0, 0, 0));   // pivot knuckle
+    group.add(cyl(0.24, 0.24, 0.4, 12, 0xe04898, 0, 0, 0));   // pivot knuckle
+    group.visible = !mid;                              // mid pair hidden until a level enables it
     table.add(group);
-    const f = { side: s, px, pz, len: FLIP_LEN, r: FLIP_R, ang: rest, target: rest, rest, active, omega: 0, group, held: false };
+    const f = { side: s, px, pz, len, r: FLIP_R, ang: rest, target: rest, rest, active, omega: 0, group, held: false, mid, enabled: !mid };
     flippers.push(f);
     return f;
   }
-  const flipL = makeFlipper(-1);
-  const flipR = makeFlipper(1);
+  const flipL = makeFlipper(-1, -PIVOT_X, PIVOT_Z, FLIP_LEN);
+  const flipR = makeFlipper(1, PIVOT_X, PIVOT_Z, FLIP_LEN);
+  const flipMidL = makeFlipper(-1, -MID_PIVOT_X, MID_PIVOT_Z, MID_FLIP_LEN, true);
+  const flipMidR = makeFlipper(1, MID_PIVOT_X, MID_PIVOT_Z, MID_FLIP_LEN, true);
+  // mid (upper) flippers turn on from level 3 (index 2) onward
+  function setMidFlippers(on) {
+    for (const f of [flipMidL, flipMidR]) {
+      f.enabled = on; f.group.visible = on;
+      if (!on) { f.held = false; f.target = f.rest; f.ang = f.rest; f.omega = 0; }
+    }
+  }
 
   // ── ball ─────────────────────────────────────────────────────────────────
   const ballMeshGeo = new THREE.IcosahedronGeometry(BALL_R, 1);
@@ -426,7 +465,8 @@ export function startGame({ canvas, hud }) {
     stuckT: 0,           // how long the live ball has been idle (anti-stuck)
     confX: 0, confZ: 0, confT: 0,  // confinement anchor + timer (score-loop guard)
     hintShown: false,    // flip hint shown once (when the ball first nears the flippers)
-    nextExtra: EXTRA_BALL_EVERY,  // score at which the next free ball is awarded
+    nextExtra: EXTRA_BALL_BASE,    // score at which the next free ball is awarded
+    extraStep: EXTRA_BALL_BASE,    // current gap between free-ball milestones (escalates)
   };
   hud.setBest && hud.setBest(state.best);
   buildLevel(0);              // populate the table at preroll (no empty table — scroll-feed rule)
@@ -449,7 +489,7 @@ export function startGame({ canvas, hud }) {
     state.mode = 'play';
     state.score = 0; state.balls = 3; state.mult = 1; state.comboT = 0;
     state.level = 0; state.clearT = 0; state.hintShown = false;
-    state.nextExtra = EXTRA_BALL_EVERY;
+    state.nextExtra = EXTRA_BALL_BASE; state.extraStep = EXTRA_BALL_BASE;
     hud.setScore(0); hud.setBalls(3); hud.setMult(1);
     hud.setPhase('play');
     audio.prime(); audio.hum(true);
@@ -464,9 +504,11 @@ export function startGame({ canvas, hud }) {
     if (circles.some(c => c.kind === 'monster' && c.alive)) return;
     const bonus = 2000 * (state.level + 1);
     addScore(bonus);
-    state.balls = Math.min(MAX_BALLS, state.balls + 1);   // extra ball on clear
-    hud.setBalls(state.balls);
-    flashMsg('LEVEL CLEAR  +1 BALL');
+    // clear ball only on the FIRST lap (levels 1..N); once the levels loop
+    // endless it's a pure survival run, so clears give score only → run can end
+    const clearBall = state.level < LEVELS.length && state.balls < MAX_BALLS;
+    if (clearBall) { state.balls++; hud.setBalls(state.balls); }
+    flashMsg(clearBall ? 'LEVEL CLEAR  +1 BALL' : 'LEVEL CLEAR');
     audio.pop();
     state.clearing = true;
     state.clearT = 1.1;                            // let the bursts play out + banner show
@@ -529,9 +571,10 @@ export function startGame({ canvas, hud }) {
   function addScore(n) {
     state.score += n * state.mult;
     hud.setScore(state.score);
-    // score-milestone free balls — eases the difficulty without any rules to read
+    // score-milestone free balls — escalating gap so they thin out as you climb
     while (state.balls < MAX_BALLS && state.score >= state.nextExtra) {
-      state.nextExtra += EXTRA_BALL_EVERY;
+      state.extraStep = Math.round(state.extraStep * EXTRA_BALL_GROWTH);
+      state.nextExtra += state.extraStep;
       awardExtraBall('EXTRA BALL  +1');
     }
   }
@@ -552,13 +595,19 @@ export function startGame({ canvas, hud }) {
   function pressSide(side) {
     audio.prime();
     if (state.mode === 'preroll') startGameRun();
-    const f = side < 0 ? flipL : flipR;
-    if (!f.held) audio.flip();
-    f.held = true; f.target = f.active;
+    let clack = false;
+    for (const f of flippers) {                 // drive every enabled flipper on this side
+      if (f.side !== side || !f.enabled) continue;
+      if (!f.held) clack = true;
+      f.held = true; f.target = f.active;
+    }
+    if (clack) audio.flip();
   }
   function releaseSide(side) {
-    const f = side < 0 ? flipL : flipR;
-    f.held = false; f.target = f.rest;
+    for (const f of flippers) {
+      if (f.side !== side) continue;
+      f.held = false; f.target = f.rest;
+    }
   }
   canvas.addEventListener('pointerdown', (e) => {
     const side = (e.clientX < (canvas.clientWidth || window.innerWidth) / 2) ? -1 : 1;
@@ -669,6 +718,7 @@ export function startGame({ canvas, hud }) {
       acc -= SUB; steps++;
       // flipper integration
       for (const f of flippers) {
+        if (!f.enabled) { f.omega = 0; continue; }
         const prev = f.ang;
         const speed = f.held ? 26 : 16;     // up fast, return a touch slower
         const diff = f.target - f.ang;
@@ -691,7 +741,7 @@ export function startGame({ canvas, hud }) {
       // collisions
       for (const s of segs) collideSeg(s);
       for (const c of circles) collideCircle(c);
-      collideFlipper(flipL); collideFlipper(flipR);
+      for (const f of flippers) if (f.enabled) collideFlipper(f);
       // top-of-arc sweep: once the plunged ball reaches the top, send it
       // DOWN-LEFT into the playfield (no teleport — it visibly rode up to the
       // top first, now sweeps down through the bumpers). Fires once per ball.
