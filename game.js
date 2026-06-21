@@ -10,6 +10,7 @@
 // Reuses the shared low-poly library: lib/prims.js + builders/monsters.js.
 
 import * as THREE from 'three';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 import { P, M, box, cyl, cone } from './lib/prims.js';
 import { MONSTERS } from './builders/monsters.js';
 import { MECHS } from './builders/mechs.js';
@@ -152,9 +153,10 @@ export function startGame({ canvas, hud }) {
   // glowing center inlay — CAPSULE / racetrack shape (rounded ends) echoing the
   // curved top, own material so it recolours per level
   const inlayMat = new THREE.MeshStandardMaterial({ color: 0x3a1f6e, roughness: 0.9, metalness: 0, flatShading: true, emissive: new THREE.Color(0x5a2fae), emissiveIntensity: 0.35 });
-  (function buildInlay() {
-    const w = HW * 1.5, len = (BOTTOM - TOP) * 0.66, r = (HW * 1.5) / 2;  // r=w/2 → full capsule ends
-    const hw = w / 2, x0 = -hw, y0 = -len / 2;
+  const inlayCZ = (TOP + BOTTOM) / 2 - 0.4;
+  // capsule (rounded-rect) Shape centred at origin, in the XY plane
+  function capsuleShape(w, len) {
+    const r = w / 2, x0 = -w / 2, y0 = -len / 2;
     const sh = new THREE.Shape();
     sh.moveTo(x0 + r, y0);
     sh.lineTo(x0 + w - r, y0);
@@ -165,12 +167,29 @@ export function startGame({ canvas, hud }) {
     sh.quadraticCurveTo(x0, y0 + len, x0, y0 + len - r);
     sh.lineTo(x0, y0 + r);
     sh.quadraticCurveTo(x0, y0, x0 + r, y0);
-    const inlay = new THREE.Mesh(new THREE.ShapeGeometry(sh), inlayMat);
-    inlay.rotation.x = -Math.PI / 2;
-    inlay.position.set(0, 0.02, (TOP + BOTTOM) / 2 - 0.4);
-    inlay.receiveShadow = true;
-    table.add(inlay);
-  })();
+    return sh;
+  }
+  const INLAY_W = HW * 1.5, INLAY_LEN = (BOTTOM - TOP) * 0.66;
+  // glowing capsule (level-colour identity) — sits low so a lit rim peeks around
+  // the polished mirror lane laid just above it
+  const inlay = new THREE.Mesh(new THREE.ShapeGeometry(capsuleShape(INLAY_W, INLAY_LEN)), inlayMat);
+  inlay.rotation.x = -Math.PI / 2;
+  inlay.position.set(0, 0.015, inlayCZ);
+  inlay.receiveShadow = true;
+  table.add(inlay);
+  // ── polished reflective centre lane (real planar reflection for "倒影" / sheen) ──
+  // A Reflector inset inside the glow capsule mirrors the ball + monsters that
+  // pass over the middle. Tinted per level. Guarded: if it fails (WebGL quirk),
+  // we just keep the matte glow capsule and the game is unaffected.
+  let reflector = null;
+  try {
+    reflector = new Reflector(new THREE.ShapeGeometry(capsuleShape(INLAY_W - 0.5, INLAY_LEN - 0.5)), {
+      textureWidth: 1024, textureHeight: 1024, color: 0x4a2f7a, clipBias: 0.003,
+    });
+    reflector.rotation.x = -Math.PI / 2;
+    reflector.position.set(0, 0.028, inlayCZ);
+    table.add(reflector);
+  } catch (e) { reflector = null; }
 
   // ── collision data ───────────────────────────────────────────────────────
   const segs   = [];   // walls: {ax,az,bx,bz,e,kick,score,flash}
@@ -330,6 +349,11 @@ export function startGame({ canvas, hud }) {
     key.color.setHex(p.key);
     floor.material.color.setHex(p.floor);
     inlayMat.color.setHex(p.inlay); inlayMat.emissive.setHex(p.inlay);
+    // tint the mirror lane toward the level's inlay colour (kept mid-dark so the
+    // reflections read without washing out)
+    if (reflector && reflector.material && reflector.material.uniforms && reflector.material.uniforms.color) {
+      reflector.material.uniforms.color.value.setHex(p.inlay).multiplyScalar(0.62);
+    }
   }
 
   // build / rebuild the upper playfield for a level index
@@ -400,6 +424,7 @@ export function startGame({ canvas, hud }) {
     clearT: 0,           // countdown after a clear before the fade-swap
     clearing: false,     // mid level-clear transition
     stuckT: 0,           // how long the live ball has been idle (anti-stuck)
+    confX: 0, confZ: 0, confT: 0,  // confinement anchor + timer (score-loop guard)
     hintShown: false,    // flip hint shown once (when the ball first nears the flippers)
     nextExtra: EXTRA_BALL_EVERY,  // score at which the next free ball is awarded
   };
@@ -575,7 +600,7 @@ export function startGame({ canvas, hud }) {
     const vn = ball.vx * nx + ball.vz * nz;
     if (vn < 0) { ball.vx -= (1 + s.e) * vn * nx; ball.vz -= (1 + s.e) * vn * nz; }
     if (s.kick) { ball.vx += nx * s.kick; ball.vz += nz * s.kick; }
-    if (s.score) { addScore(s.score); bump(); audio.sling(); if (s.sling) { s.sling.t = 0.18; s.sling.light.intensity = 3; } }
+    if (s.score && !(s.cool > 0)) { s.cool = 0.18; addScore(s.score); bump(); audio.sling(); if (s.sling) { s.sling.t = 0.18; s.sling.light.intensity = 3; } }
   }
   function collideCircle(c) {
     if (c.kind === 'monster' && !c.alive) return;   // defeated → ball passes through
@@ -602,6 +627,10 @@ export function startGame({ canvas, hud }) {
       if (c.hp <= 0) { defeatMonster(c); checkLevelClear(); }
       return;
     }
+    // pops / guard pins: cooldown so a ball wedged against (or ping-ponging on)
+    // a bumper can't rack up score every frame — the score-loop trap fix.
+    if (c.cool > 0) return;
+    c.cool = 0.18;
     addScore(c.score); bump();
     c.punch = 1;
     if (c.light) c.light.intensity = 3.2;
@@ -717,7 +746,20 @@ export function startGame({ canvas, hud }) {
         ball.vx += (Math.random() - 0.5) * 6;
         state.stuckT = 0;
       }
-    } else { state.stuckT = 0; }
+      // confinement guard: a FAST ball can ping-pong forever in one tiny spot
+      // (between two bumpers / a bumper + wall), racking up score. Track a roaming
+      // anchor; if the ball never leaves a small radius for a while, eject it down.
+      const dcx = ball.x - state.confX, dcz = ball.z - state.confZ;
+      if (dcx * dcx + dcz * dcz > 1.3 * 1.3) { state.confX = ball.x; state.confZ = ball.z; state.confT = 0; }
+      else {
+        state.confT += dt;
+        if (state.confT > 2.6) {
+          ball.vx = (ball.x >= 0 ? -1 : 1) * (4 + Math.random() * 3);   // kick toward centre
+          ball.vz = 7 + Math.random() * 3;                              // and firmly down to the flippers
+          state.confX = ball.x; state.confZ = ball.z; state.confT = 0; state.stuckT = 0;
+        }
+      }
+    } else { state.stuckT = 0; state.confT = 0; state.confX = ball.x; state.confZ = ball.z; }
 
     // level-clear transition: after the bursts play, fade-swap to the next level
     if (state.clearing) {
@@ -860,8 +902,9 @@ export function startGame({ canvas, hud }) {
       }
       if (c.light) c.light.intensity = Math.max(0, c.light.intensity - dt * 7);
     }
-    // slingshot light decay
+    // slingshot light decay + scoring-seg cooldown bleed
     for (const s of segs) {
+      if (s.cool > 0) s.cool -= dt;
       if (s.sling && s.sling.t > 0) { s.sling.t -= dt; s.sling.light.intensity = Math.max(0, s.sling.t * 16); }
     }
 
