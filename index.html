@@ -115,30 +115,25 @@
     transition:opacity .35s ease, transform .35s ease;
   }
   #title .brand {
-    display:flex; flex-direction:column; align-items:center; line-height:.8;
-    padding:.04em 0 .1em;
+    display:flex; flex-direction:column; align-items:center; line-height:.76;
+    transform:rotate(-3deg);
   }
   #title .l1 {
-    font-family:var(--display); font-weight:400; font-size:48px; letter-spacing:.07em;
-    color:#fff; -webkit-text-stroke:2px #1a0628; paint-order:stroke fill;
-    text-shadow:0 0 18px var(--magenta), 0 3px 0 rgba(0,0,0,.45);
-    transform:rotate(-2.5deg);
+    font-family:var(--display); font-weight:400; font-size:38px; letter-spacing:.18em;
+    color:var(--gold); -webkit-text-stroke:2px #2a0f06; paint-order:stroke fill;
+    text-shadow:0 2px 0 rgba(0,0,0,.4); padding-left:.18em;
   }
   #title .l2 {
-    font-family:var(--display); font-weight:400; font-size:96px; letter-spacing:.02em;
+    font-family:var(--display); font-weight:400; font-size:86px; letter-spacing:.01em;
     color:var(--neon); -webkit-text-stroke:3px #08210a; paint-order:stroke fill;
-    text-shadow:0 0 26px rgba(139,255,90,.85), 0 5px 0 rgba(0,0,0,.5);
-    transform:rotate(1.5deg); margin-top:-4px;
+    text-shadow:0 0 24px rgba(139,255,90,.8), 3px 5px 0 var(--magenta), 4px 7px 0 rgba(0,0,0,.5);
   }
-  #title .sub {
-    display:block; font-weight:600; font-size:13px; letter-spacing:.3em;
-    color:rgba(255,255,255,.78); margin-top:10px; text-transform:uppercase;
-  }
+  #title .sub { display:none; }
   #title.hidden { opacity:0; transform:translate(-50%,-12px); }
 
   /* ── START button — clear begin affordance on the attract screen ── */
   #start {
-    bottom:calc(20% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    bottom:calc(8% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
     z-index:8; pointer-events:auto; cursor:pointer; display:none;
     font-family:var(--display); font-weight:400; font-size:34px; letter-spacing:.05em; color:#160a2a;
     padding:14px 44px; border-radius:999px;
@@ -155,8 +150,8 @@
 
   /* ── control hint — two flipper pads with finger taps ── */
   #hint {
-    bottom:calc(13% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
-    display:flex; gap:42px; align-items:center; justify-content:center;
+    bottom:calc(26% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    display:flex; gap:150px; align-items:center; justify-content:center;
     opacity:0; transition:opacity .45s ease; pointer-events:none;
   }
   #hint.show { opacity:1; }
@@ -390,7 +385,7 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=22';
+import { startGame } from './game.js?v=25';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
@@ -470,13 +465,14 @@ const hud = {
   setPhase(p) {
     if (p === 'preroll') {
       scoreEl.classList.remove('show'); multEl.classList.remove('show'); ballsEl.classList.remove('show');
-      levelEl.classList.remove('show'); hintEl.classList.remove('show');
+      levelEl.classList.remove('show');
       titleEl.classList.remove('hidden'); startEl.classList.add('show'); overEl.classList.remove('show');
+      hintEl.classList.add('show');                   // control guide sits on the visible flippers at start
       lastScore = 0;
     } else if (p === 'play') {
       scoreEl.classList.add('show'); ballsEl.classList.add('show');
       titleEl.classList.add('hidden'); startEl.classList.remove('show'); overEl.classList.remove('show');
-      hintEl.classList.remove('show');               // flip hint shows later, when the ball nears the flippers
+      hintEl.classList.remove('show');               // guide already shown at start — no repeat in play
     } else if (p === 'dead') {
       overEl.classList.add('show'); multEl.classList.remove('show'); levelEl.classList.remove('show');
       startEl.classList.remove('show'); hintEl.classList.remove('show');

@@ -668,13 +668,6 @@ export function startGame({ canvas, hud }) {
       }
     } else { state.stuckT = 0; }
 
-    // flip-hint: first time the ball descends toward the flippers, show the
-    // LEFT/RIGHT hint — the moment the player actually needs to flip
-    if (!state.hintShown && ball.live && ball.z > 0.5 && ball.vz > 0) {
-      state.hintShown = true;
-      if (hud.showHint) hud.showHint();
-    }
-
     // level-clear transition: after the bursts play, fade-swap to the next level
     if (state.clearing) {
       state.clearT -= dt;
@@ -688,12 +681,13 @@ export function startGame({ canvas, hud }) {
     }
 
     if (state.mode === 'preroll') {
-      // dedicated ATTRACT angle — an elevated hero shot of the machine with a
-      // gentle drift. The play (follow) camera takes over once the game starts.
+      // ATTRACT angle — framed low on the machine so the FLIPPERS are clearly in
+      // the bottom of the first screen (the control guide sits on them), with a
+      // gentle drift. Pulled back a touch so the whole machine reads.
       const z = FOLLOW.zoom;
-      const sway = Math.sin(t * 0.4) * 0.9;
-      camera.position.set(sway, 8.6 * z, 5.6 * z + 1.6);
-      camera.lookAt(0, 1.4, -8.6);
+      const sway = Math.sin(t * 0.4) * 0.7;
+      camera.position.set(sway, 9.2 * z, FOLLOW.preroll + 8.2 * z);
+      camera.lookAt(0, -0.2, FOLLOW.preroll - 3.4);
       camFocusZ = FOLLOW.preroll;     // keep the follow rig primed for the cut to play
     } else {
       // follow camera — track the ball's z (clamped), smoothly
