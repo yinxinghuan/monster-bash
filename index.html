@@ -134,7 +134,7 @@
   /* ── START button — clear begin affordance on the attract screen ── */
   #start {
     bottom:calc(8% + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
-    z-index:8; pointer-events:auto; cursor:pointer; display:none;
+    z-index:8; pointer-events:auto; cursor:pointer; display:none; white-space:nowrap;
     font-family:var(--display); font-weight:400; font-size:34px; letter-spacing:.05em; color:#160a2a;
     padding:14px 44px; border-radius:999px;
     background:linear-gradient(150deg, var(--neon), #4fc83a);
@@ -385,7 +385,7 @@
 </script>
 
 <script type="module">
-import { startGame } from './game.js?v=25';
+import { startGame } from './game.js?v=26';
 
 const $ = (s) => document.querySelector(s);
 const scoreEl = $('#score');
