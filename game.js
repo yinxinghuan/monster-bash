@@ -399,7 +399,7 @@ export function startGame({ canvas, hud }) {
   // A MID pair (upper flippers) is added for the harder later levels so the
   // player can re-launch a ball that's fallen below the cast back up to it.
   // Same left/right input drives every flipper on that side — no new controls.
-  const MID_PIVOT_X = 2.55, MID_PIVOT_Z = 0.2, MID_FLIP_LEN = 1.3;
+  const MID_PIVOT_X = 2.55, MID_PIVOT_Z = -1.0, MID_FLIP_LEN = 1.3;
   function makeFlipper(side, px, pz, len, mid = false) {
     const s = side;
     // rest: tip points inward + gently down (leaves a centre gap); active: swings up
