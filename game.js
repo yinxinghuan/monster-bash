@@ -432,21 +432,82 @@ export function startGame({ canvas, hud }) {
     set(flipMidL, leftOn); set(flipMidR, rightOn);
   }
 
-  // ── ball ─────────────────────────────────────────────────────────────────
+  // ── balls (a small POOL so the pit can spit out a multiball) ───────────────
+  const MAX_INPLAY = 5;                       // most physical balls on the table at once
   const ballMeshGeo = new THREE.IcosahedronGeometry(BALL_R, 1);
   const ballMat = new THREE.MeshStandardMaterial({
     color: 0xdfe6ee, roughness: 0.25, metalness: 0.8, flatShading: true,
     emissive: 0x223044, emissiveIntensity: 0.3,
   });
-  const ballMesh = new THREE.Mesh(ballMeshGeo, ballMat);
-  ballMesh.castShadow = true;
-  ballMesh.position.y = BALL_R;
-  table.add(ballMesh);
-  const ballLight = new THREE.PointLight(0xbfe6ff, 0.7, 5, 2);
-  table.add(ballLight);
-
-  const ball = { x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false };
+  const balls = [];
+  for (let i = 0; i < MAX_INPLAY; i++) {
+    const mesh = new THREE.Mesh(ballMeshGeo, ballMat);
+    mesh.castShadow = true; mesh.position.y = BALL_R; mesh.visible = false;
+    table.add(mesh);
+    balls.push({ x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false,
+      active: false, mesh, stuckT: 0, confX: 0, confZ: 0, confT: 0 });
+  }
+  // ONE shared ball light follows the lead ball (avoids piling up PointLights —
+  // too many can blow the per-fragment light limit on mobile GPUs)
+  const ballLight = new THREE.PointLight(0xbfe6ff, 0, 6, 2); table.add(ballLight);
   const LANE_EXIT_Z = TOP + 1.8;   // up near the top → sweep the ball into the field
+  function activeBalls() { let n = 0; for (const b of balls) if (b.active) n++; return n; }
+  function spawnBall(x, z, vx, vz, live = true) {
+    for (const b of balls) {
+      if (b.active) continue;
+      b.active = true; b.live = live; b.gated = false;
+      b.x = x; b.z = z; b.vx = vx; b.vz = vz; b.mesh.visible = true;
+      b.stuckT = 0; b.confX = x; b.confZ = z; b.confT = 0;
+      return b;
+    }
+    return null;
+  }
+  function despawnBall(b) { b.active = false; b.live = false; b.mesh.visible = false; }
+
+  // ── MULTIBALL PIT (saucer) ─────────────────────────────────────────────────
+  // A glowing gold hole mid-field. While ARMED (pulsing) it captures the next ball
+  // that drops in and spits out a multiball; then it goes dark for a cooldown and
+  // re-arms. When dark it's inert (the ball rolls over it), so it never disrupts
+  // normal flow. Self-evident: bright pulsing = jackpot, dark = spent.
+  const PIT = { x: 0, z: TOP + CONTENT_DZ + 4.0 * CONTENT_SPREAD, r: 0.52,
+    armed: true, cd: 0, ringMat: null, light: null, group: null };
+  (function buildPit() {
+    const g = new THREE.Group(); g.position.set(PIT.x, 0, PIT.z);
+    g.add(cyl(0.4, 0.4, 0.34, 20, 0x000000, 0, -0.14, 0));            // the recessed dark hole
+    g.add(cyl(0.5, 0.6, 0.1, 20, 0x0c0716, 0, 0.05, 0));             // dark well rim
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x1c1206, roughness: 0.4, metalness: 0,
+      flatShading: true, emissive: new THREE.Color(0xffd23f), emissiveIntensity: 0.7 });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.06, 8, 24), ringMat);
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.1; ring.castShadow = false;
+    g.add(ring);
+    const light = new THREE.PointLight(0xffd23f, 1.2, 5, 2); light.position.set(0, 1.0, 0); g.add(light);
+    table.add(g);
+    PIT.ringMat = ringMat; PIT.light = light; PIT.group = g;
+  })();
+  function startMultiball() {
+    const n = Math.min(3, MAX_INPLAY - activeBalls());   // fan a few balls up out of the hole
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (i - (n - 1) / 2) * 0.5;   // spread, aimed up the table
+      const spd = 9 + Math.random() * 3;
+      spawnBall(PIT.x + Math.cos(ang) * 0.3, PIT.z, Math.cos(ang) * spd, Math.sin(ang) * spd, true);
+    }
+    flashMsg('MULTIBALL!');
+    audio.launch(); audio.pop();
+  }
+  function checkPit(b) {
+    if (!PIT.armed) return;
+    const dx = b.x - PIT.x, dz = b.z - PIT.z;
+    if (dx * dx + dz * dz > PIT.r * PIT.r) return;
+    PIT.armed = false; PIT.cd = 14;       // spent → dark for a while, then re-arms
+    despawnBall(b);                        // the captured ball is consumed...
+    startMultiball();                      // ...and reborn as a multiball
+  }
+  function updatePit(dt) {
+    if (!PIT.armed) { PIT.cd -= dt; if (PIT.cd <= 0) PIT.armed = true; }
+    const pulse = 0.6 + 0.4 * Math.sin(t * 4);
+    if (PIT.ringMat) PIT.ringMat.emissiveIntensity = PIT.armed ? pulse : 0.1;
+    if (PIT.light) PIT.light.intensity = PIT.armed ? (1.0 + 0.6 * Math.sin(t * 4)) : 0.18;
+  }
 
   // ── procedural Web Audio (primed on first user gesture) ─────────────────────
   const audio = createAudio();
@@ -475,15 +536,19 @@ export function startGame({ canvas, hud }) {
   hud.setPhase('preroll');    // (hides the level chip that buildLevel showed, until play starts)
 
   function resetBall() {
-    // ball waits in the launch lane (right channel), then auto-plunges up
-    ball.x = LANE_CX; ball.z = BOTTOM - 0.6;
-    ball.vx = 0; ball.vz = 0; ball.live = false; ball.gated = false;
+    // clear the table, then a single ball waits in the launch lane, auto-plunges
+    for (const b of balls) despawnBall(b);
+    spawnBall(LANE_CX, BOTTOM - 0.6, 0, 0, false);   // active + visible, not yet live
     state.launchT = 0.7;
   }
   function plunge() {
-    ball.live = true;
-    ball.vx = (Math.random() - 0.5) * 0.3;
-    ball.vz = -28;         // rocket up the launch lane (reaches the top)
+    for (const b of balls) {
+      if (b.active && !b.live) {
+        b.live = true; b.gated = false;
+        b.vx = (Math.random() - 0.5) * 0.3;
+        b.vz = -28;         // rocket up the launch lane (reaches the top)
+      }
+    }
     audio.launch();
   }
 
@@ -514,7 +579,7 @@ export function startGame({ canvas, hud }) {
     audio.pop();
     state.clearing = true;
     state.clearT = 1.1;                            // let the bursts play out + banner show
-    ball.live = false;                            // freeze the ball during the transition
+    for (const b of balls) b.live = false;        // freeze every ball during the transition
   }
 
   function defeatMonster(c) {
@@ -535,8 +600,9 @@ export function startGame({ canvas, hud }) {
     }
   }
 
+  // called only when the LAST ball in play has drained (multiball costs one life)
   function loseBall() {
-    ball.live = false;
+    for (const b of balls) despawnBall(b);
     audio.drain();
     state.balls--;
     state.mult = 1; hud.setMult(1);
@@ -636,7 +702,7 @@ export function startGame({ canvas, hud }) {
   });
 
   // ── collision helpers ──────────────────────────────────────────────────────
-  function collideSeg(s) {
+  function collideSeg(ball, s) {
     const abx = s.bx - s.ax, abz = s.bz - s.az;
     const L2 = abx * abx + abz * abz || 1e-6;
     let t = ((ball.x - s.ax) * abx + (ball.z - s.az) * abz) / L2;
@@ -653,7 +719,7 @@ export function startGame({ canvas, hud }) {
     if (s.kick) { ball.vx += nx * s.kick; ball.vz += nz * s.kick; }
     if (s.score && !(s.cool > 0)) { s.cool = 0.18; addScore(s.score); bump(); audio.sling(); if (s.sling) { s.sling.t = 0.18; s.sling.light.intensity = 3; } }
   }
-  function collideCircle(c) {
+  function collideCircle(ball, c) {
     if (c.kind === 'monster' && !c.alive) return;   // defeated → ball passes through
     const dx = ball.x - c.x, dz = ball.z - c.z;
     const d2 = dx * dx + dz * dz; const R = BALL_R + c.r;
@@ -687,7 +753,7 @@ export function startGame({ canvas, hud }) {
     if (c.light) c.light.intensity = 3.2;
     if (c.kind === 'sling') audio.sling(); else audio.pop();
   }
-  function collideFlipper(f) {
+  function collideFlipper(ball, f) {
     const ax = f.px, az = f.pz;
     const bx = f.px + Math.cos(f.ang) * f.len, bz = f.pz + Math.sin(f.ang) * f.len;
     const abx = bx - ax, abz = bz - az; const L2 = abx * abx + abz * abz || 1e-6;
@@ -728,34 +794,40 @@ export function startGame({ canvas, hud }) {
         f.ang += step;
         f.omega = (f.ang - prev) / SUB;
       }
-      if (!ball.live) continue;
-      // rolling friction — bleeds energy so the ball escapes bumper clusters and
-      // trickles down to drain instead of pinballing forever (sim has no real
-      // friction). Flips/bumpers re-energise it, so saves still feel snappy.
-      ball.vx *= 0.9982; ball.vz *= 0.9982;
-      // gravity
-      ball.vz += GRAV * SUB;
-      // integrate
-      ball.x += ball.vx * SUB; ball.z += ball.vz * SUB;
-      // clamp absurd speeds
-      const sp = Math.hypot(ball.vx, ball.vz);
-      if (sp > 34) { const k = 34 / sp; ball.vx *= k; ball.vz *= k; }
-      // collisions
-      for (const s of segs) collideSeg(s);
-      for (const c of circles) collideCircle(c);
-      for (const f of flippers) if (f.enabled) collideFlipper(f);
-      // top-of-arc sweep: once the plunged ball reaches the top, send it
-      // DOWN-LEFT into the playfield (no teleport — it visibly rode up to the
-      // top first, now sweeps down through the bumpers). Fires once per ball.
-      // wide trigger: the bigger arc can nudge the rising ball just left of HW
-      // before it's low enough, so fire whenever it's high on the right side.
-      if (!ball.gated && ball.z < LANE_EXIT_Z && ball.x > HW - 1.3) {
-        ball.vx = -(8 + Math.random() * 3);   // sweep well into the field (toward centre)
-        ball.vz = 3;
-        ball.gated = true;
+      // per-ball physics (multiball: every active live ball steps independently)
+      for (const ball of balls) {
+        if (!ball.active || !ball.live) continue;
+        // rolling friction — bleeds energy so the ball escapes bumper clusters and
+        // trickles down to drain instead of pinballing forever (sim has no real
+        // friction). Flips/bumpers re-energise it, so saves still feel snappy.
+        ball.vx *= 0.9982; ball.vz *= 0.9982;
+        // gravity
+        ball.vz += GRAV * SUB;
+        // integrate
+        ball.x += ball.vx * SUB; ball.z += ball.vz * SUB;
+        // clamp absurd speeds
+        const sp = Math.hypot(ball.vx, ball.vz);
+        if (sp > 34) { const k = 34 / sp; ball.vx *= k; ball.vz *= k; }
+        // collisions
+        for (const s of segs) collideSeg(ball, s);
+        for (const c of circles) collideCircle(ball, c);
+        for (const f of flippers) if (f.enabled) collideFlipper(ball, f);
+        // top-of-arc sweep: once the plunged ball reaches the top, send it
+        // DOWN-LEFT into the playfield (no teleport — it visibly rode up to the
+        // top first, now sweeps down through the bumpers). Fires once per ball.
+        if (!ball.gated && ball.z < LANE_EXIT_Z && ball.x > HW - 1.3) {
+          ball.vx = -(8 + Math.random() * 3);   // sweep well into the field (toward centre)
+          ball.vz = 3;
+          ball.gated = true;
+        }
+        // multiball pit capture
+        checkPit(ball);
+        // drain — only the LAST drained ball costs a life
+        if (ball.active && ball.z > DRAIN_Z) {
+          despawnBall(ball);
+          if (activeBalls() === 0) loseBall();
+        }
       }
-      // drain
-      if (ball.z > DRAIN_Z) loseBall();
     }
   }
 
@@ -781,37 +853,38 @@ export function startGame({ canvas, hud }) {
     const dt = Math.min(0.05, clock.getDelta());
     t += dt;
 
-    // auto-plunge countdown between balls
-    if (state.mode === 'play' && !ball.live) {
-      if (state.launchT > 0) { state.launchT -= dt; if (state.launchT <= 0) plunge(); }
+    // auto-plunge countdown between balls (a ball waits in the lane, not yet live)
+    if (state.mode === 'play' && state.launchT > 0) {
+      state.launchT -= dt; if (state.launchT <= 0) plunge();
     }
 
     physics(dt);
+    updatePit(dt);
 
-    // anti-stuck: if the live ball idles too long (trapped in a corner / on a
-    // flat spot — the "game stalls" case), nudge it back toward the flippers so
-    // play never gets stuck.
-    if (state.mode === 'play' && ball.live) {
-      if (Math.hypot(ball.vx, ball.vz) < 1.3) state.stuckT += dt; else state.stuckT = 0;
-      if (state.stuckT > 2.5) {
-        ball.vz += 5 + Math.random() * 2;            // shove down toward the flippers
-        ball.vx += (Math.random() - 0.5) * 6;
-        state.stuckT = 0;
-      }
-      // confinement guard: a FAST ball can ping-pong forever in one tiny spot
-      // (between two bumpers / a bumper + wall), racking up score. Track a roaming
-      // anchor; if the ball never leaves a small radius for a while, eject it down.
-      const dcx = ball.x - state.confX, dcz = ball.z - state.confZ;
-      if (dcx * dcx + dcz * dcz > 1.3 * 1.3) { state.confX = ball.x; state.confZ = ball.z; state.confT = 0; }
-      else {
-        state.confT += dt;
-        if (state.confT > 2.6) {
-          ball.vx = (ball.x >= 0 ? -1 : 1) * (4 + Math.random() * 3);   // kick toward centre
-          ball.vz = 7 + Math.random() * 3;                              // and firmly down to the flippers
-          state.confX = ball.x; state.confZ = ball.z; state.confT = 0; state.stuckT = 0;
+    // anti-stuck + score-loop confinement guard — applied per live ball so a
+    // trapped ball (slow in a corner, or fast ping-ponging in one spot) is always
+    // freed and can't rack up score forever.
+    if (state.mode === 'play') {
+      for (const ball of balls) {
+        if (!ball.active || !ball.live) continue;
+        if (Math.hypot(ball.vx, ball.vz) < 1.3) ball.stuckT += dt; else ball.stuckT = 0;
+        if (ball.stuckT > 2.5) {
+          ball.vz += 5 + Math.random() * 2;            // shove down toward the flippers
+          ball.vx += (Math.random() - 0.5) * 6;
+          ball.stuckT = 0;
+        }
+        const dcx = ball.x - ball.confX, dcz = ball.z - ball.confZ;
+        if (dcx * dcx + dcz * dcz > 1.3 * 1.3) { ball.confX = ball.x; ball.confZ = ball.z; ball.confT = 0; }
+        else {
+          ball.confT += dt;
+          if (ball.confT > 2.6) {
+            ball.vx = (ball.x >= 0 ? -1 : 1) * (4 + Math.random() * 3);   // kick toward centre
+            ball.vz = 7 + Math.random() * 3;                              // and firmly down to the flippers
+            ball.confX = ball.x; ball.confZ = ball.z; ball.confT = 0; ball.stuckT = 0;
+          }
         }
       }
-    } else { state.stuckT = 0; state.confT = 0; state.confX = ball.x; state.confZ = ball.z; }
+    }
 
     // level-clear transition: after the bursts play, fade-swap to the next level
     if (state.clearing) {
@@ -835,9 +908,11 @@ export function startGame({ canvas, hud }) {
       camera.lookAt(0, -0.2, FOLLOW.preroll - 3.4);
       camFocusZ = FOLLOW.preroll;     // keep the follow rig primed for the cut to play
     } else {
-      // follow camera — track the ball's z (clamped), smoothly
-      const targetFocus = ball.live
-        ? Math.max(FOLLOW.focusMin, Math.min(FOLLOW.focusMax, ball.z))
+      // follow camera — track the most urgent live ball (nearest the drain), clamped
+      let lead = null;
+      for (const b of balls) if (b.active && b.live && (!lead || b.z > lead.z)) lead = b;
+      const targetFocus = lead
+        ? Math.max(FOLLOW.focusMin, Math.min(FOLLOW.focusMax, lead.z))
         : FOLLOW.preroll;
       camFocusZ += (targetFocus - camFocusZ) * Math.min(1, dt * FOLLOW.lerp);
       applyCamera();
@@ -846,12 +921,18 @@ export function startGame({ canvas, hud }) {
     // combo decay
     if (state.comboT > 0) { state.comboT -= dt; if (state.comboT <= 0 && state.mult > 1) { state.mult = 1; hud.setMult(1); } }
 
-    // ball mesh follow + spin + light
-    ballMesh.position.set(ball.x, BALL_R, ball.z);
-    ballMesh.rotation.x += ball.vz * dt * 1.4;
-    ballMesh.rotation.z -= ball.vx * dt * 1.4;
-    ballLight.position.set(ball.x, BALL_R + 0.6, ball.z);
-    ballLight.intensity = ball.live ? 0.8 : 0.0;
+    // ball mesh follow + spin (every ball in the pool); one shared light tracks the lead
+    let lit = null;
+    for (const b of balls) {
+      if (!b.active) { b.mesh.visible = false; continue; }
+      b.mesh.visible = true;
+      b.mesh.position.set(b.x, BALL_R, b.z);
+      b.mesh.rotation.x += b.vz * dt * 1.4;
+      b.mesh.rotation.z -= b.vx * dt * 1.4;
+      if (b.live && (!lit || b.z > lit.z)) lit = b;
+    }
+    if (lit) { ballLight.position.set(lit.x, BALL_R + 0.6, lit.z); ballLight.intensity = 0.7; }
+    else ballLight.intensity = 0;
 
     // flipper visuals
     for (const f of flippers) f.group.rotation.y = -f.ang;
@@ -967,8 +1048,8 @@ export function startGame({ canvas, hud }) {
 
   // expose for debug / screenshots / "play again"
   window.__mb = {
-    scene, camera, renderer, ball, flippers, circles, segs, state, audio,
+    scene, camera, renderer, balls, flippers, circles, segs, state, audio, PIT,
     gameplay: { reset },
-    plunge, startGameRun, buildLevel, checkLevelClear, defeatMonster, ROSTER,
+    plunge, startGameRun, buildLevel, checkLevelClear, defeatMonster, startMultiball, ROSTER,
   };
 }
