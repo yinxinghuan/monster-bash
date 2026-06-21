@@ -391,7 +391,7 @@ export function startGame({ canvas, hud }) {
     for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
     if (L.obs) for (const [x, z, c] of L.obs) spawnObstacle(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
     for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z * CONTENT_SPREAD });
-    setMidFlippers(i >= 2);   // upper flippers from level 3 onward (the harder levels)
+    setMidFlippers(i >= 2, true);   // right upper flipper always; left joins from level 3
     hud.setLevel && hud.setLevel(i + 1, L.name);
   }
 
@@ -399,7 +399,7 @@ export function startGame({ canvas, hud }) {
   // A MID pair (upper flippers) is added for the harder later levels so the
   // player can re-launch a ball that's fallen below the cast back up to it.
   // Same left/right input drives every flipper on that side — no new controls.
-  const MID_PIVOT_X = 2.55, MID_PIVOT_Z = -1.0, MID_FLIP_LEN = 1.3;
+  const MID_PIVOT_X = 2.55, MID_PIVOT_Z = -2.4, MID_FLIP_LEN = 1.3;
   function makeFlipper(side, px, pz, len, mid = false) {
     const s = side;
     // rest: tip points inward + gently down (leaves a centre gap); active: swings up
@@ -422,12 +422,14 @@ export function startGame({ canvas, hud }) {
   const flipR = makeFlipper(1, PIVOT_X, PIVOT_Z, FLIP_LEN);
   const flipMidL = makeFlipper(-1, -MID_PIVOT_X, MID_PIVOT_Z, MID_FLIP_LEN, true);
   const flipMidR = makeFlipper(1, MID_PIVOT_X, MID_PIVOT_Z, MID_FLIP_LEN, true);
-  // mid (upper) flippers turn on from level 3 (index 2) onward
-  function setMidFlippers(on) {
-    for (const f of [flipMidL, flipMidR]) {
+  // upper flippers per side: the RIGHT one is on every level (the right side is a
+  // hard area to save), the LEFT one joins from level 3 (the harder levels).
+  function setMidFlippers(leftOn, rightOn) {
+    const set = (f, on) => {
       f.enabled = on; f.group.visible = on;
       if (!on) { f.held = false; f.target = f.rest; f.ang = f.rest; f.omega = 0; }
-    }
+    };
+    set(flipMidL, leftOn); set(flipMidR, rightOn);
   }
 
   // ── ball ─────────────────────────────────────────────────────────────────
