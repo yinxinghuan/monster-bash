@@ -445,7 +445,7 @@ export function startGame({ canvas, hud }) {
     mesh.castShadow = true; mesh.position.y = BALL_R; mesh.visible = false;
     table.add(mesh);
     balls.push({ x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false,
-      active: false, mesh, stuckT: 0, confX: 0, confZ: 0, confT: 0 });
+      active: false, mesh, stuckT: 0, sampX: 0, sampZ: 0, sampT: 0, strikes: 0 });
   }
   // ONE shared ball light follows the lead ball (avoids piling up PointLights —
   // too many can blow the per-fragment light limit on mobile GPUs)
@@ -457,7 +457,7 @@ export function startGame({ canvas, hud }) {
       if (b.active) continue;
       b.active = true; b.live = live; b.gated = false;
       b.x = x; b.z = z; b.vx = vx; b.vz = vz; b.mesh.visible = true;
-      b.stuckT = 0; b.confX = x; b.confZ = z; b.confT = 0;
+      b.stuckT = 0; b.sampX = x; b.sampZ = z; b.sampT = 0; b.strikes = 0;
       return b;
     }
     return null;
@@ -525,8 +525,6 @@ export function startGame({ canvas, hud }) {
     level: 0,            // current level index
     clearT: 0,           // countdown after a clear before the fade-swap
     clearing: false,     // mid level-clear transition
-    stuckT: 0,           // how long the live ball has been idle (anti-stuck)
-    confX: 0, confZ: 0, confT: 0,  // confinement anchor + timer (score-loop guard)
     hintShown: false,    // flip hint shown once (when the ball first nears the flippers)
     nextExtra: EXTRA_BALL_BASE,    // score at which the next free ball is awarded
     extraStep: EXTRA_BALL_BASE,    // current gap between free-ball milestones (escalates)
@@ -861,26 +859,27 @@ export function startGame({ canvas, hud }) {
     physics(dt);
     updatePit(dt);
 
-    // anti-stuck + score-loop confinement guard — applied per live ball so a
-    // trapped ball (slow in a corner, or fast ping-ponging in one spot) is always
-    // freed and can't rack up score forever.
+    // anti-stuck — two guards per live ball so a trapped ball is always freed:
     if (state.mode === 'play') {
       for (const ball of balls) {
         if (!ball.active || !ball.live) continue;
-        if (Math.hypot(ball.vx, ball.vz) < 1.3) ball.stuckT += dt; else ball.stuckT = 0;
-        if (ball.stuckT > 2.5) {
-          ball.vz += 5 + Math.random() * 2;            // shove down toward the flippers
-          ball.vx += (Math.random() - 0.5) * 6;
-          ball.stuckT = 0;
-        }
-        const dcx = ball.x - ball.confX, dcz = ball.z - ball.confZ;
-        if (dcx * dcx + dcz * dcz > 1.3 * 1.3) { ball.confX = ball.x; ball.confZ = ball.z; ball.confT = 0; }
-        else {
-          ball.confT += dt;
-          if (ball.confT > 2.6) {
-            ball.vx = (ball.x >= 0 ? -1 : 1) * (4 + Math.random() * 3);   // kick toward centre
-            ball.vz = 7 + Math.random() * 3;                              // and firmly down to the flippers
-            ball.confX = ball.x; ball.confZ = ball.z; ball.confT = 0; ball.stuckT = 0;
+        // (a) RESTING: barely moving for a moment → shove down toward the flippers
+        if (Math.hypot(ball.vx, ball.vz) < 1.2) ball.stuckT += dt; else ball.stuckT = 0;
+        if (ball.stuckT > 1.8) { ball.vz += 6; ball.vx += (Math.random() - 0.5) * 6; ball.stuckT = 0; }
+        // (b) POCKET: a ball ping-ponging in a tight pocket is FAST (evades (a)) but
+        // makes no NET progress. Sample position every 0.7s; if it hasn't travelled
+        // far over 3 samples, it's trapped → hard eject toward the open centre. (The
+        // old radius-anchor guard reset every time the ball bounced past it, so a
+        // wide-pocket ping-pong slipped through and racked up score — this fixes it.)
+        ball.sampT += dt;
+        if (ball.sampT >= 0.7) {
+          const moved = Math.hypot(ball.x - ball.sampX, ball.z - ball.sampZ);
+          ball.strikes = moved < 1.4 ? ball.strikes + 1 : 0;
+          ball.sampX = ball.x; ball.sampZ = ball.z; ball.sampT = 0;
+          if (ball.strikes >= 3) {
+            ball.vx = (ball.x >= 0 ? -1 : 1) * (7 + Math.random() * 4);   // hard toward centre
+            ball.vz = 6 + Math.random() * 5;                             // and down into play
+            ball.strikes = 0; ball.stuckT = 0;
           }
         }
       }
