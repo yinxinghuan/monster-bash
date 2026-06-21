@@ -795,13 +795,17 @@ export function startGame({ canvas, hud }) {
       // along; next physics step reads the updated centre. Continues through hits.
       if (c.move) {
         const mv = c.move, a = t * mv.s + mv.ph;
-        if (mv.t === 'h')          { c.x = mv.ax + Math.sin(a) * mv.a; c.z = mv.az; }
-        else if (mv.t === 'v')     { c.x = mv.ax; c.z = mv.az + Math.sin(a) * mv.a; }
-        else if (mv.t === 'orbit') { c.x = mv.ax + Math.cos(a) * mv.a; c.z = mv.az + Math.sin(a) * mv.a; }
+        // position + heading (rigs face +z at yaw 0, so yaw = atan2(vx,vz)).
+        // h/v use a discrete sign so the turn is a clean pivot, not a flicker
+        // through "facing camera" at the zero-velocity turn point.
+        if (mv.t === 'h')          { c.x = mv.ax + Math.sin(a) * mv.a; c.z = mv.az; c.heading = Math.cos(a) >= 0 ? Math.PI / 2 : -Math.PI / 2; }
+        else if (mv.t === 'v')     { c.x = mv.ax; c.z = mv.az + Math.sin(a) * mv.a; c.heading = Math.cos(a) >= 0 ? 0 : Math.PI; }
+        else if (mv.t === 'orbit') { c.x = mv.ax + Math.cos(a) * mv.a; c.z = mv.az + Math.sin(a) * mv.a; c.heading = Math.atan2(-Math.sin(a), Math.cos(a)); }
         c.mesh.position.x = c.x; c.mesh.position.z = c.z;
         if (c.post)  { c.post.position.x = c.x; c.post.position.z = c.z; }
         if (c.light) { c.light.position.x = c.x; c.light.position.z = c.z; }
       }
+      const yaw = c.move ? c.heading : c.face;   // walkers face their heading
       if (c.punch > 0) {
         // HIT — varied reaction
         c.punch = Math.max(0, c.punch - dt * 3.2);
@@ -809,18 +813,28 @@ export function startGame({ canvas, hud }) {
         c.mesh.scale.setScalar(c.base);
         c.mesh.position.y = Math.sin(p * Math.PI) * 0.15;
         if (c.hitStyle === 'stagger') {
-          c.mesh.rotation.set(-0.55 * p, c.face, 0);
+          c.mesh.rotation.set(-0.55 * p, yaw, 0);
           if (rig) { rig.armL.rotation.set(c.armBase - 1.8 * p, 0, 0.6 * p); rig.armR.rotation.set(c.armBase - 1.8 * p, 0, -0.6 * p); rig.legL.rotation.set(0.5 * p, 0, 0); rig.legR.rotation.set(0.3 * p, 0, 0); }
         } else if (c.hitStyle === 'spin') {
-          c.mesh.rotation.set(0, c.face + p * 6.0, 0);
+          c.mesh.rotation.set(0, yaw + p * 6.0, 0);
           if (rig) { rig.armL.rotation.set(c.armBase, 0, 1.2 * p); rig.armR.rotation.set(c.armBase, 0, -1.2 * p); rig.legL.rotation.set(0, 0, 0); rig.legR.rotation.set(0, 0, 0); }
         } else if (c.hitStyle === 'jump') {
-          c.mesh.rotation.set(0, c.face, 0);
+          c.mesh.rotation.set(0, yaw, 0);
           c.mesh.position.y = Math.sin(p * Math.PI) * 0.5;
           if (rig) { rig.armL.rotation.set(c.armBase - 1.5 * p, 0, 0); rig.armR.rotation.set(c.armBase - 1.5 * p, 0, 0); rig.legL.rotation.set(-0.8 * p, 0, 0); rig.legR.rotation.set(-0.8 * p, 0, 0); }
         } else { // flail
-          c.mesh.rotation.set(0, c.face, w * 0.12 * p);
+          c.mesh.rotation.set(0, yaw, w * 0.12 * p);
           if (rig) { rig.armL.rotation.set(c.armBase - 2.3 * p + w * 0.6 * p, 0, 1.3 * p); rig.armR.rotation.set(c.armBase - 2.3 * p - w * 0.6 * p, 0, -1.3 * p); rig.legL.rotation.set(w * 0.9 * p, 0, 0); rig.legR.rotation.set(-w * 0.9 * p, 0, 0); }
+        }
+      } else if (c.move) {
+        // WALK — stride legs + counter-swing arms + a per-step bob, facing heading
+        const wk = t * (4 + c.move.s * 2.4) + c.ph;
+        const sw = Math.sin(wk);
+        c.mesh.rotation.set(0, yaw, 0); c.mesh.scale.setScalar(c.base);
+        c.mesh.position.y = Math.abs(Math.cos(wk)) * 0.06;     // bob up on each footfall
+        if (rig) {
+          rig.legL.rotation.set(sw * 0.7, 0, 0); rig.legR.rotation.set(-sw * 0.7, 0, 0);
+          rig.armL.rotation.set(c.armBase - sw * 0.5, 0, 0); rig.armR.rotation.set(c.armBase + sw * 0.5, 0, 0);
         }
       } else {
         // IDLE — alive + varied per creature, so nobody stands frozen
