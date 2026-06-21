@@ -35,6 +35,8 @@ const DRAIN_Z  = BOTTOM;  // past this z = ball lost
 const CONTENT_DZ = 3.0;   // push all monsters/bumpers DOWN this far below TOP, so the
                           // curved top leaves a clear band for the ball to come over + flow in
 const CONTENT_SPREAD = 1.5; // spread the cast/bumpers further apart down the long table
+const MAX_BALLS = 6;        // ball-counter cap (extra balls stack up to here)
+const EXTRA_BALL_EVERY = 5000; // every N points → a free ball ("续命" milestone)
 
 // per-creature personality: idle stance + how it reacts when bashed
 const STYLE = {
@@ -51,25 +53,38 @@ const STYLE = {
 };
 
 // LEVELS — fixed bottom (flippers/lanes/drain) is shared; each level swaps the
-// UPPER playfield: monster cast + formation + pop-bumper layout + palette.
-// `m(key,x,z,face,hp,scale?)` builds a monster spec. Positions use z relative to TOP.
-const m = (key, x, z, face = 0, hp = 3, scale = 0.62) => ({ key, x, z, face, hp, scale });
+// UPPER playfield: monster cast + formation + pop-bumper layout + obstacles + palette.
+// `m(key,x,z,face,hp,scale?,mv?)` builds a monster spec. Positions use z relative to TOP.
+// mv = patrol rule {t:'h'|'v'|'orbit', a:amplitude(world units), s:speed, p?:phase}.
+// `obs` = bouncy guard pins [x,z,color] that narrow the path to the cast (keep the
+//   ball pinging up top → more bashing, more score) and add visual complexity.
+// Difficulty curve: L1 static intro → movement introduced → pins + paced packs →
+//   patrolling mech line → boss arena. Free-ball milestones offset the ramp.
+const m = (key, x, z, face = 0, hp = 3, scale = 0.62, mv = null) => ({ key, x, z, face, hp, scale, mv });
 const LEVELS = [
+  // L1 Crypt — gentle intro: static cast, just learn the flippers
   { name: 'Crypt', pal: { fog: 0x140a26, hemiSky: 0x9a7bd6, hemiGround: 0x241433, key: 0xfff0d8, floor: 0x231244, inlay: 0x5a2fae },
     cast: [ m('vampire', -2.2, 1.6, 0.5), m('werewolf', 0, 1.4, 0), m('zombie', 2.2, 1.6, -0.5), m('skeleton', -1.7, 6.2, 0.8), m('skeleton', 1.7, 6.2, -0.8) ],
     pops: [ [-1.3, 3.6, 0x2fd0ff], [1.3, 3.6, 0xffd23f], [0, 5.2, 0x8bff5a] ] },
+  // L2 Catacomb — movement debut: the lead mummy slides side to side
   { name: 'Catacomb', pal: { fog: 0x0a1f1a, hemiSky: 0x6fd0c0, hemiGround: 0x10302a, key: 0xe8fff4, floor: 0x123830, inlay: 0x2fae8b },
-    cast: [ m('mummy', 0, 1.2, 0), m('ghost', -2.3, 3.4, 0.5), m('mummy', 2.3, 3.4, -0.5), m('skeleton', 0, 5.8, 0) ],
+    cast: [ m('mummy', 0, 1.2, 0, 3, 0.62, { t: 'h', a: 1.7, s: 0.85 }), m('ghost', -2.3, 3.4, 0.5), m('mummy', 2.3, 3.4, -0.5), m('skeleton', 0, 5.8, 0) ],
     pops: [ [-1.5, 4.4, 0x9bff5a], [1.5, 4.4, 0x2fd0ff], [0, 2.9, 0xffd23f] ] },
+  // L3 Blood Moon — two werewolves pace in opposition + guard pins pinch the lanes
   { name: 'Blood Moon', pal: { fog: 0x2a0a0e, hemiSky: 0xd68a7b, hemiGround: 0x33130f, key: 0xffe0d0, floor: 0x3a1418, inlay: 0xc24b3b },
-    cast: [ m('werewolf', -1.5, 1.6, 0.3), m('werewolf', 1.5, 1.6, -0.3), m('vampire', 0, 2.9, 0), m('zombie', -2.4, 4.2, 0.6), m('zombie', 2.4, 4.2, -0.6) ],
-    pops: [ [-1.6, 5.8, 0xffd23f], [0, 6.2, 0xff5a8a], [1.6, 5.8, 0x2fd0ff] ] },
+    cast: [ m('werewolf', -1.6, 1.6, 0.3, 3, 0.62, { t: 'h', a: 1.1, s: 1.1 }), m('werewolf', 1.6, 1.6, -0.3, 3, 0.62, { t: 'h', a: 1.1, s: 1.1, p: 3.14 }), m('vampire', 0, 3.0, 0), m('zombie', -2.4, 4.4, 0.6), m('zombie', 2.4, 4.4, -0.6) ],
+    obs: [ [-1.5, 2.5, 0xff5a8a], [1.5, 2.5, 0xff5a8a] ],
+    pops: [ [0, 5.6, 0xffd23f], [-1.7, 6.0, 0x2fd0ff], [1.7, 6.0, 0x2fd0ff] ] },
+  // L4 Machine — patrolling mech line + bobbing rear guard + a central pin gauntlet
   { name: 'Machine', pal: { fog: 0x0a1428, hemiSky: 0x7bb0e0, hemiGround: 0x14243a, key: 0xe0f0ff, floor: 0x142844, inlay: 0x2f6eae },
-    cast: [ m('combatMech', -2.0, 1.6, 0.4, 3), m('combatMech', 0, 1.4, 0, 3), m('combatMech', 2.0, 1.6, -0.4, 3), m('skeleton', -1.6, 6.0, 0.8), m('skeleton', 1.6, 6.0, -0.8) ],
-    pops: [ [-1.3, 3.8, 0x2fd0ff], [1.3, 3.8, 0x8bff5a], [0, 5.4, 0xffd23f] ] },
+    cast: [ m('combatMech', -1.9, 1.5, 0.4, 3, 0.62, { t: 'h', a: 0.7, s: 1.3 }), m('combatMech', 1.9, 1.5, -0.4, 3, 0.62, { t: 'h', a: 0.7, s: 1.3, p: 3.14 }), m('combatMech', 0, 2.6, 0, 4), m('skeleton', -1.7, 6.0, 0.8, 3, 0.62, { t: 'v', a: 1.0, s: 1.0 }), m('skeleton', 1.7, 6.0, -0.8, 3, 0.62, { t: 'v', a: 1.0, s: 1.0, p: 3.14 }) ],
+    obs: [ [-0.95, 4.3, 0x2fd0ff], [0.95, 4.3, 0x8bff5a], [0, 5.3, 0xffd23f] ],
+    pops: [ [-1.8, 4.0, 0x2fd0ff], [1.8, 4.0, 0x8bff5a] ] },
+  // L5 Raid — boss arena: the minotaur orbits, flanking guards pace, pins everywhere
   { name: 'Raid', pal: { fog: 0x281a0a, hemiSky: 0xe0b87b, hemiGround: 0x33260f, key: 0xfff0d0, floor: 0x3a2e14, inlay: 0xffa320 },
-    cast: [ m('swat', -2.2, 2.0, 0.5, 3), m('viking', 2.2, 2.0, -0.5, 3), m('minotaur', 0, 1.3, 0, 6, 0.86) ],
-    pops: [ [-1.5, 4.6, 0xff5a8a], [1.5, 4.6, 0x2fd0ff], [0, 6.0, 0xffd23f] ] },
+    cast: [ m('minotaur', 0, 2.6, 0, 6, 0.86, { t: 'orbit', a: 0.85, s: 0.9 }), m('swat', -1.9, 1.4, 0.5, 3, 0.62, { t: 'h', a: 0.7, s: 1.4 }), m('viking', 1.9, 1.4, -0.5, 3, 0.62, { t: 'h', a: 0.7, s: 1.4, p: 3.14 }) ],
+    obs: [ [-1.5, 4.2, 0xffa320], [1.5, 4.2, 0xffa320], [0, 6.0, 0xff5a8a] ],
+    pops: [ [-1.7, 6.4, 0x2fd0ff], [1.7, 6.4, 0xffd23f] ] },
 ];
 
 export function startGame({ canvas, hud }) {
@@ -269,6 +284,22 @@ export function startGame({ canvas, hud }) {
     circles.push({ x, z, r, e: 0.5, kick: 5.0, score: 100, mesh: g, cap, light, kind: 'pop', punch: 0 });
   }
 
+  // guard pin — a tall, bouncy, non-kicking pillar that narrows the path to the
+  // cast. Reuses the 'pop' kind (bounce + score + light pulse) with kick 0 so it
+  // deflects without launching; level-clear only counts monsters, so it's inert
+  // to progression. Cleared on level rebuild like any non-'post' circle.
+  function spawnObstacle(x, z, color) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    g.add(cyl(0.27, 0.31, 0.16, 14, 0x1a0e36, 0, 0.08, 0));
+    g.add(cyl(0.22, 0.26, 1.0, 12, color, 0, 0.58, 0, { e: color, ei: 0.5 }));
+    table.add(g);
+    const light = new THREE.PointLight(color, 0.3, 3.2, 2);
+    light.position.set(x, 1.2, z); table.add(light);
+    levelMeshes.push(g, light);
+    circles.push({ x, z, r: 0.3, e: 0.85, kick: 0, score: 20, mesh: g, light, kind: 'pop', punch: 0 });
+  }
+
   function spawnMonster(spec) {
     const fig = ROSTER[spec.key]();
     const SCALE = spec.scale || 0.62;
@@ -288,6 +319,7 @@ export function startGame({ canvas, hud }) {
       base: SCALE, face: spec.face || 0, rig: fig.userData.rig || null, armBase: fig.userData.armBase || 0,
       hp: spec.hp, maxhp: spec.hp, alive: true, defeatT: 0,
       idle: st.idle, hitStyle: st.hit, ph: Math.random() * 6.28, spd: 0.85 + Math.random() * 0.5,
+      move: spec.mv ? { ...spec.mv, ax: spec.x, az: spec.z, ph: spec.mv.p ?? Math.random() * 6.28 } : null,
     });
   }
 
@@ -310,6 +342,7 @@ export function startGame({ canvas, hud }) {
     const L = LEVELS[i % LEVELS.length];
     applyPalette(L.pal);
     for (const [x, z, c] of L.pops) spawnPop(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
+    if (L.obs) for (const [x, z, c] of L.obs) spawnObstacle(x, TOP + CONTENT_DZ + z * CONTENT_SPREAD, c);
     for (const sp of L.cast) spawnMonster({ ...sp, z: TOP + CONTENT_DZ + sp.z * CONTENT_SPREAD });
     hud.setLevel && hud.setLevel(i + 1, L.name);
   }
@@ -368,6 +401,7 @@ export function startGame({ canvas, hud }) {
     clearing: false,     // mid level-clear transition
     stuckT: 0,           // how long the live ball has been idle (anti-stuck)
     hintShown: false,    // flip hint shown once (when the ball first nears the flippers)
+    nextExtra: EXTRA_BALL_EVERY,  // score at which the next free ball is awarded
   };
   hud.setBest && hud.setBest(state.best);
   buildLevel(0);              // populate the table at preroll (no empty table — scroll-feed rule)
@@ -390,6 +424,7 @@ export function startGame({ canvas, hud }) {
     state.mode = 'play';
     state.score = 0; state.balls = 3; state.mult = 1; state.comboT = 0;
     state.level = 0; state.clearT = 0; state.hintShown = false;
+    state.nextExtra = EXTRA_BALL_EVERY;
     hud.setScore(0); hud.setBalls(3); hud.setMult(1);
     hud.setPhase('play');
     audio.prime(); audio.hum(true);
@@ -404,7 +439,7 @@ export function startGame({ canvas, hud }) {
     if (circles.some(c => c.kind === 'monster' && c.alive)) return;
     const bonus = 2000 * (state.level + 1);
     addScore(bonus);
-    state.balls = Math.min(6, state.balls + 1);   // extra ball on clear
+    state.balls = Math.min(MAX_BALLS, state.balls + 1);   // extra ball on clear
     hud.setBalls(state.balls);
     flashMsg('LEVEL CLEAR  +1 BALL');
     audio.pop();
@@ -455,9 +490,25 @@ export function startGame({ canvas, hud }) {
     hud.setDeath({ score: state.score, best: state.best });
   }
 
+  // award a free ball ("续命"); returns false (and gives a small consolation
+  // bonus) when already at the cap so the milestone isn't simply wasted.
+  function awardExtraBall(msg) {
+    if (state.balls >= MAX_BALLS) return false;
+    state.balls++;
+    hud.setBalls(state.balls);
+    flashMsg(msg || 'EXTRA BALL  +1');
+    audio.pop();
+    return true;
+  }
+
   function addScore(n) {
     state.score += n * state.mult;
     hud.setScore(state.score);
+    // score-milestone free balls — eases the difficulty without any rules to read
+    while (state.balls < MAX_BALLS && state.score >= state.nextExtra) {
+      state.nextExtra += EXTRA_BALL_EVERY;
+      awardExtraBall('EXTRA BALL  +1');
+    }
   }
   function bump() {
     state.comboT = 2.4;
@@ -738,6 +789,18 @@ export function startGame({ canvas, hud }) {
         }
         if (c.light) c.light.intensity = Math.max(0, c.light.intensity - dt * 4);
         continue;
+      }
+      // PATROL — alive monsters glide within their region per their rule. We move
+      // the collision centre (c.x/c.z) and bring the figure + floor disc + light
+      // along; next physics step reads the updated centre. Continues through hits.
+      if (c.move) {
+        const mv = c.move, a = t * mv.s + mv.ph;
+        if (mv.t === 'h')          { c.x = mv.ax + Math.sin(a) * mv.a; c.z = mv.az; }
+        else if (mv.t === 'v')     { c.x = mv.ax; c.z = mv.az + Math.sin(a) * mv.a; }
+        else if (mv.t === 'orbit') { c.x = mv.ax + Math.cos(a) * mv.a; c.z = mv.az + Math.sin(a) * mv.a; }
+        c.mesh.position.x = c.x; c.mesh.position.z = c.z;
+        if (c.post)  { c.post.position.x = c.x; c.post.position.z = c.z; }
+        if (c.light) { c.light.position.x = c.x; c.light.position.z = c.z; }
       }
       if (c.punch > 0) {
         // HIT — varied reaction
