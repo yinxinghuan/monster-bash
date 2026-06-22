@@ -445,7 +445,7 @@ export function startGame({ canvas, hud }) {
     mesh.castShadow = true; mesh.position.y = BALL_R; mesh.visible = false;
     table.add(mesh);
     balls.push({ x: LANE_CX, z: BOTTOM - 0.6, vx: 0, vz: 0, live: false, gated: false,
-      active: false, mesh, stuckT: 0, sampX: 0, sampZ: 0, sampT: 0, strikes: 0 });
+      active: false, mesh, stuckT: 0, sampX: 0, sampZ: 0, sampT: 0, strikes: 0, upperT: 0 });
   }
   // ONE shared ball light follows the lead ball (avoids piling up PointLights —
   // too many can blow the per-fragment light limit on mobile GPUs)
@@ -457,7 +457,7 @@ export function startGame({ canvas, hud }) {
       if (b.active) continue;
       b.active = true; b.live = live; b.gated = false;
       b.x = x; b.z = z; b.vx = vx; b.vz = vz; b.mesh.visible = true;
-      b.stuckT = 0; b.sampX = x; b.sampZ = z; b.sampT = 0; b.strikes = 0;
+      b.stuckT = 0; b.sampX = x; b.sampZ = z; b.sampT = 0; b.strikes = 0; b.upperT = 0;
       return b;
     }
     return null;
@@ -881,6 +881,19 @@ export function startGame({ canvas, hud }) {
             ball.vz = 6 + Math.random() * 5;                             // and down into play
             ball.strikes = 0; ball.stuckT = 0;
           }
+        }
+        // (c) UPPER-FIELD DWELL: a ball can loop a WIDE region up top — net move per
+        // window stays > 1.4 so (b) never trips — yet it never comes DOWN to the
+        // flippers, just farming bumpers forever (the RAID x8 score-loop). The real
+        // invariant a live ball must satisfy: periodically descend to the flipper
+        // zone. If it stays in the upper field (z < 0.5) too long, flush it straight
+        // down. Reaching the lower playfield resets the clock, so legit play is never
+        // touched — only an unreachable trapped ball trips it.
+        if (ball.z > 0.5) ball.upperT = 0; else ball.upperT += dt;
+        if (ball.upperT > 9) {
+          ball.vx = (Math.random() - 0.5) * 5;     // break symmetry off any wall
+          ball.vz = 11 + Math.random() * 4;         // strong flush toward the drain
+          ball.upperT = 0; ball.strikes = 0; ball.stuckT = 0;
         }
       }
     }
