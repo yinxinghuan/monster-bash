@@ -85,11 +85,15 @@ const LEVELS = [
     cast: [ m('combatMech', -1.9, 1.5, 0.4, 3, 0.62, { t: 'h', a: 0.7, s: 1.3 }), m('combatMech', 1.9, 1.5, -0.4, 3, 0.62, { t: 'h', a: 0.7, s: 1.3, p: 3.14 }), m('combatMech', 0, 2.6, 0, 4), m('skeleton', -1.7, 6.0, 0.8, 3, 0.62, { t: 'v', a: 1.0, s: 1.0 }), m('skeleton', 1.7, 6.0, -0.8, 3, 0.62, { t: 'v', a: 1.0, s: 1.0, p: 3.14 }) ],
     obs: [ [-0.95, 4.3, 0x2fd0ff], [0.95, 4.3, 0x8bff5a], [0, 5.3, 0xffd23f] ],
     pops: [ [-1.8, 4.0, 0x2fd0ff], [1.8, 4.0, 0x8bff5a] ] },
-  // L5 Raid — boss arena: the minotaur orbits, flanking guards pace, pins everywhere
+  // L5 Raid — boss arena: the minotaur orbits, flanking guards pace, pins everywhere.
+  // NOTE: keep ALL content at zparam ≲ 5 (world z ≲ -2.5) — the lower funnel must stay
+  // clear of the shared outlane guard pegs at world (±3.05, -0.3). A pop (r0.54) placed
+  // near a peg (r0.24) leaves a 0.57 gap < ball Ø 0.68 → the ball wedges left/right in the
+  // lower-mid every time (the old z=6.4 pops did exactly this). Verified by /tmp/mb_clear.mjs.
   { name: 'Raid', pal: { fog: 0x281a0a, hemiSky: 0xe0b87b, hemiGround: 0x33260f, key: 0xfff0d0, floor: 0x3a2e14, inlay: 0xffa320 },
     cast: [ m('minotaur', 0, 2.6, 0, 6, 0.86, { t: 'orbit', a: 0.85, s: 0.9 }), m('swat', -1.9, 1.4, 0.5, 3, 0.62, { t: 'h', a: 0.7, s: 1.4 }), m('viking', 1.9, 1.4, -0.5, 3, 0.62, { t: 'h', a: 0.7, s: 1.4, p: 3.14 }) ],
-    obs: [ [-1.5, 4.2, 0xffa320], [1.5, 4.2, 0xffa320], [0, 6.0, 0xff5a8a] ],
-    pops: [ [-1.7, 6.4, 0x2fd0ff], [1.7, 6.4, 0xffd23f] ] },
+    obs: [ [-1.4, 3.4, 0xffa320], [1.4, 3.4, 0xffa320], [0, 4.8, 0xff5a8a] ],
+    pops: [ [-2.1, 4.7, 0x2fd0ff], [2.1, 4.7, 0xffd23f] ] },
 ];
 
 export function startGame({ canvas, hud }) {
